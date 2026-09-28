@@ -22,6 +22,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from copy import deepcopy
 from datetime import date, datetime, time
+from decimal import Decimal
 from typing import Any
 
 import pyarrow as pa
@@ -44,15 +45,34 @@ _TYPE_MAP: dict[str, pa.DataType] = {
     "bool": pa.bool_(),
     "boolean": pa.bool_(),
     "int": pa.int64(),
+    "int8": pa.int8(),
+    "int16": pa.int16(),
+    "int32": pa.int32(),
+    "int64": pa.int64(),
     "integer": pa.int64(),
+    "uint8": pa.uint8(),
+    "uint16": pa.uint16(),
+    "uint32": pa.uint32(),
+    "uint64": pa.uint64(),
+    "halffloat": pa.float16(),
     "floating": pa.float64(),
     "float": pa.float64(),
+    "float16": pa.float16(),
+    "float32": pa.float32(),
+    "float64": pa.float64(),
     "double": pa.float64(),
     "utf8": pa.string(),
     "string": pa.string(),
+    "large_string": pa.large_string(),
+    "large_utf8": pa.large_string(),
     "binary": pa.binary(),
+    "large_binary": pa.large_binary(),
     "date": pa.date32(),
+    "date32": pa.date32(),
+    "date64": pa.date64(),
     "time": pa.time64("us"),
+    "time32": pa.time32("s"),
+    "time64": pa.time64("us"),
     "timestamp": pa.timestamp("us"),
     "decimal": pa.decimal128(38, 9),
     "duration": pa.duration("us"),
@@ -303,23 +323,52 @@ def _semantic_result(payload: Mapping[str, Any]) -> SemanticResult:
             continue
         name = str(field["name"])
         type_name = str(field.get("type", "utf8"))
+        arrow_type = _arrow_type(type_name)
         values = [
-            _coerce_value(row.get(name), type_name)
+            _coerce_value(row.get(name), arrow_type)
             for row in rows
             if isinstance(row, Mapping)
         ]
-        columns[name] = pa.array(values, type=_arrow_type(type_name))
+        try:
+            columns[name] = pa.array(values, type=arrow_type)
+        except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError) as ex:
+            value_types = sorted(
+                {type(value).__name__ for value in values if value is not None}
+            )
+            raise ValueError(
+                f"Could not convert Quiver column {name!r} with declared type "
+                f"{type_name!r} to Arrow {arrow_type}; received value types "
+                f"{value_types or ['null']}"
+            ) from ex
     return SemanticResult(requests=requests_, results=pa.table(columns))
 
 
-def _coerce_value(value: Any, type_name: str) -> Any:
-    if value is None or not isinstance(value, str):
+def _coerce_value(value: Any, arrow_type: pa.DataType) -> Any:
+    if value is None:
         return value
-    family = type_name.split("[", maxsplit=1)[0].lower()
-    if family == "date":
+
+    if pa.types.is_string(arrow_type) or pa.types.is_large_string(arrow_type):
+        return value if isinstance(value, str) else str(value)
+    if pa.types.is_binary(arrow_type) or pa.types.is_large_binary(arrow_type):
+        return value.encode() if isinstance(value, str) else value
+    if not isinstance(value, str):
+        return value
+    if pa.types.is_date(arrow_type):
         return date.fromisoformat(value)
-    if family == "time":
+    if pa.types.is_time(arrow_type):
         return time.fromisoformat(value)
-    if family == "timestamp":
+    if pa.types.is_timestamp(arrow_type):
         return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if pa.types.is_decimal(arrow_type):
+        return Decimal(value)
+    if pa.types.is_integer(arrow_type):
+        return int(value)
+    if pa.types.is_floating(arrow_type):
+        return float(value)
+    if pa.types.is_boolean(arrow_type):
+        normalized = value.casefold()
+        if normalized in {"true", "1"}:
+            return True
+        if normalized in {"false", "0"}:
+            return False
     return value

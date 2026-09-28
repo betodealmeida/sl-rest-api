@@ -22,7 +22,7 @@ from typing import Any
 
 from superset_core.semantic_layers.types import SemanticQuery
 
-from netflix.quiver_semantic_layer.view import QuiverSemanticView
+from netflix.quiver_semantic_layer.view import QuiverSemanticView, _semantic_result
 
 
 class FakeClient:
@@ -100,3 +100,20 @@ def test_metadata_and_query_results_are_adapted() -> None:
     }
     assert result.requests[0].definition == "request-id"
     assert result.results.to_pylist() == [{"day": date(2026, 9, 28), "revenue": 42.5}]
+
+
+def test_query_results_accept_canonical_arrow_type_names() -> None:
+    result = _semantic_result(
+        {
+            "results": {
+                "schema": [
+                    {"name": "count", "type": "int64"},
+                    {"name": "label", "type": "large_utf8"},
+                ],
+                "rows": [{"count": 42, "label": 7}],
+            }
+        }
+    )
+
+    assert result.results.schema.field("count").type == "int64"
+    assert result.results.to_pylist() == [{"count": 42, "label": "7"}]
