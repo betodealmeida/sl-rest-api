@@ -104,7 +104,7 @@ Response:
 ]
 ```
 
-`name` is the stable identifier used in endpoint paths. The optional `display_name` is a human-readable label for presentation. Clients should fall back to `name` when `display_name` is absent. Including it in this lightweight response lets clients render view pickers without fetching every view's full metadata.
+`name` is the stable identifier used in endpoint paths. The optional `display_name` is a human-readable label for presentation and may be a string or `null`. Clients should fall back to `name` when `display_name` is absent, `null`, or empty. Including it in this lightweight response lets clients render view pickers without fetching every view's full metadata.
 
 Superset has the concept of [features](https://github.com/apache/superset/blob/97eafd6140085f81ec3e70c85215cd5e6a5608fb/superset-core/src/superset_core/semantic_layers/view.py#L33-L40) for semantic layers. They currently include:
 
@@ -192,7 +192,7 @@ Response:
 }
 ```
 
-The full metadata response repeats the optional `display_name` from the list response. When present here, it is authoritative for the materialised view.
+The full metadata response repeats the optional, nullable `display_name` from the list response. When it is a non-empty string here, it is authoritative for the materialised view.
 
 The `metadata` attribute is optional and omitted when empty. Top-level metadata is strict: servers must emit only the documented keys below. Producer-specific, experimental, and client-native annotations belong under `extensions`.
 
@@ -543,7 +543,7 @@ Same shape as `compatible-metrics`, returning dimensions.
 
 ### Unreleased
 
-- Semantic views may now expose a top-level `display_name` in list and metadata responses. Clients fall back to the stable `name` when it is absent.
+- Semantic views may now expose a top-level, nullable `display_name` in list and metadata responses. Clients fall back to the stable `name` when it is absent, `null`, or empty.
 - Error responses now follow RFC 9457 Problem Details for HTTP APIs and should use `application/problem+json`.
 - Column metadata may now be exposed on dimension and metric objects returned by `POST /views/{view_name}`. The optional `metadata` object now has a strict top-level contract: `display_name`, `semantic_type`, `unit`, `attributes`, `format`, `filter`, and `extensions`.
 - Added a formal JSON Schema for portable column metadata, including `unit`, `format`, `filter`, and `extensions`.
@@ -567,7 +567,7 @@ corresponding endpoint:
 
 A client is conformant if it:
 
-1. uses `name` when a view's optional `display_name` is absent;
+1. uses `name` when a view's optional `display_name` is absent, `null`, or empty;
 2. resolves result column metadata from `POST /views/{view_name}` and treats `results.schema` as tabular output only;
 3. tolerates absent `metadata` and absent nested metadata objects;
 4. ignores unknown extension namespaces and unknown fields inside known extension namespaces;
