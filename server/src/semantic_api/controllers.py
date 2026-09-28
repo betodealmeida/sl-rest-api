@@ -26,11 +26,21 @@ from semantic_api.serialization import (
 from semantic_api.service import build_query, fetch_view
 
 
-def _view_payload(view) -> dict[str, Any]:  # noqa: ANN001 - SemanticView
-    return {
+def _view_summary_payload(view) -> dict[str, Any]:  # noqa: ANN001 - SemanticView
+    payload = {
         "name": view.name,
         "uid": view.uid(),
         "features": sorted(f.value for f in view.features),
+    }
+    display_name = getattr(view, "display_name", None)
+    if isinstance(display_name, str) and display_name:
+        payload["display_name"] = display_name
+    return payload
+
+
+def _view_payload(view) -> dict[str, Any]:  # noqa: ANN001 - SemanticView
+    return {
+        **_view_summary_payload(view),
         "dimensions": [dimension_to_payload(d) for d in view.get_dimensions()],
         "metrics": [metric_to_payload(m) for m in view.get_metrics()],
     }
@@ -44,14 +54,7 @@ class ViewsController(Controller):
     @post(["/list", "/"], status_code=HTTP_200_OK)
     async def list_views(self, data: ListViewsRequest) -> list[dict[str, Any]]:
         views = registry.layer().get_semantic_views(data.runtime_configuration)
-        return [
-            {
-                "name": view.name,
-                "uid": view.uid(),
-                "features": sorted(f.value for f in view.features),
-            }
-            for view in views
-        ]
+        return [_view_summary_payload(view) for view in views]
 
     @post("/{view_name:str}", status_code=HTTP_200_OK)
     async def get_view(self, view_name: str, data: ViewRequest) -> dict[str, Any]:
