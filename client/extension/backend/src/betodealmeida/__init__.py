@@ -15,4 +15,4 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""Quiver semantic-layer extension."""
+"""Superset extensions published by betodealmeida."""

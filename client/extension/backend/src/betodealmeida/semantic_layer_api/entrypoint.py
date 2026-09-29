@@ -15,4 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""Netflix Superset extensions."""
+"""Auto-discovered backend entrypoint for the Semantic Layer API extension."""
+
+from .api import OAuthAPI  # noqa: F401
+from .layer import APISemanticLayer  # noqa: F401

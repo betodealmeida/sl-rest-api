@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""Semantic-view adapter for the Quiver REST protocol."""
+"""Semantic-view adapter for the Semantic Layer REST API."""
 
 from __future__ import annotations
 
@@ -39,7 +39,7 @@ from superset_core.semantic_layers.types import (
 )
 from superset_core.semantic_layers.view import SemanticView, SemanticViewFeature
 
-from .client import QuiverClient
+from .client import APIClient
 
 _TYPE_MAP: dict[str, pa.DataType] = {
     "bool": pa.bool_(),
@@ -80,13 +80,13 @@ _TYPE_MAP: dict[str, pa.DataType] = {
 }
 
 
-class QuiverSemanticView(SemanticView):
-    """A semantic view whose operations are forwarded to Quiver."""
+class APISemanticView(SemanticView):
+    """A semantic view whose operations are forwarded to an API service."""
 
     def __init__(
         self,
         name: str,
-        client: QuiverClient,
+        client: APIClient,
         summary: Mapping[str, Any] | None = None,
     ) -> None:
         self.name = name
@@ -306,7 +306,7 @@ def _semantic_result(payload: Mapping[str, Any]) -> SemanticResult:
     requests_payload = payload.get("requests", [])
     requests_ = [
         SemanticRequest(
-            type=str(item.get("type", "quiver")),
+            type=str(item.get("type", "semantic-layer-api")),
             definition=str(item.get("definition", "")),
         )
         for item in requests_payload
@@ -336,7 +336,7 @@ def _semantic_result(payload: Mapping[str, Any]) -> SemanticResult:
                 {type(value).__name__ for value in values if value is not None}
             )
             raise ValueError(
-                f"Could not convert Quiver column {name!r} with declared type "
+                f"Could not convert API column {name!r} with declared type "
                 f"{type_name!r} to Arrow {arrow_type}; received value types "
                 f"{value_types or ['null']}"
             ) from ex

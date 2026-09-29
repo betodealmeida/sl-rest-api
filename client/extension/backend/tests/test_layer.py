@@ -15,26 +15,26 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from netflix.quiver_semantic_layer.configuration import QuiverConfiguration
-from netflix.quiver_semantic_layer.layer import QuiverSemanticLayer
+from betodealmeida.semantic_layer_api.configuration import APIConfiguration
+from betodealmeida.semantic_layer_api.layer import APISemanticLayer
 
 
-def configuration() -> QuiverConfiguration:
-    return QuiverConfiguration(
-        api_url="https://quiver.example.test/api",
+def configuration() -> APIConfiguration:
+    return APIConfiguration(
+        api_url="https://semantic-layer.example.test/api",
         client_id="client-id",
         client_secret="client-secret",
     )
 
 
 def test_configuration_schema_marks_client_secret_write_only() -> None:
-    schema = QuiverSemanticLayer.get_configuration_schema()
+    schema = APISemanticLayer.get_configuration_schema()
 
     assert schema["properties"]["client_secret"]["writeOnly"] is True
 
 
 def test_configuration_schema_uses_plain_optional_url_fields() -> None:
-    properties = QuiverSemanticLayer.get_configuration_schema()["properties"]
+    properties = APISemanticLayer.get_configuration_schema()["properties"]
 
     assert properties["authorization_url"]["type"] == "string"
     assert properties["authorization_url"]["default"] == ""
@@ -43,7 +43,7 @@ def test_configuration_schema_uses_plain_optional_url_fields() -> None:
 
 
 def test_configuration_schema_omits_unused_mapping_fields() -> None:
-    properties = QuiverSemanticLayer.get_configuration_schema()["properties"]
+    properties = APISemanticLayer.get_configuration_schema()["properties"]
 
     assert "additional_configuration" not in properties
     assert "authorization_params" not in properties
@@ -52,11 +52,11 @@ def test_configuration_schema_omits_unused_mapping_fields() -> None:
 
 def test_configuration_action_reflects_personal_token(monkeypatch) -> None:
     monkeypatch.setattr(
-        "netflix.quiver_semantic_layer.layer.has_usable_credentials",
+        "betodealmeida.semantic_layer_api.layer.has_usable_credentials",
         lambda config: True,
     )
 
-    action = QuiverSemanticLayer.get_configuration_actions(configuration())[0]
+    action = APISemanticLayer.get_configuration_actions(configuration())[0]
 
     assert action.id == "oauth2"
     assert action.required is True

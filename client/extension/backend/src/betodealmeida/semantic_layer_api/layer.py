@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""Superset semantic-layer contribution for Quiver."""
+"""Superset semantic-layer contribution for the Semantic Layer REST API."""
 
 from __future__ import annotations
 
@@ -28,48 +28,48 @@ from superset_core.semantic_layers.layer import (
     SemanticLayerActionResult,
 )
 
-from .client import QuiverClient
-from .configuration import QuiverConfiguration
+from .client import APIClient
+from .configuration import APIConfiguration
 from .oauth import ACTION_ID, has_usable_credentials, start_authorization
-from .view import QuiverSemanticView
+from .view import APISemanticView
 
 
 @semantic_layer(
-    id="quiver",
-    name="Quiver",
-    description="Netflix Quiver gateway to the Semantic Layer REST API.",
+    id="semantic-layer-api",
+    name="Semantic Layer API",
+    description="Connect to a service implementing the Semantic Layer REST API.",
 )
-class QuiverSemanticLayer(SemanticLayer[QuiverConfiguration, QuiverSemanticView]):
-    """Semantic-layer provider backed by Quiver's REST gateway."""
+class APISemanticLayer(SemanticLayer[APIConfiguration, APISemanticView]):
+    """Semantic-layer provider backed by the Semantic Layer REST API."""
 
-    configuration_class = QuiverConfiguration
+    configuration_class = APIConfiguration
 
-    def __init__(self, configuration: QuiverConfiguration):
+    def __init__(self, configuration: APIConfiguration):
         self.configuration = configuration
 
     @classmethod
     def from_configuration(
         cls,
         configuration: dict[str, Any],
-    ) -> QuiverSemanticLayer:
-        return cls(QuiverConfiguration.model_validate(configuration))
+    ) -> APISemanticLayer:
+        return cls(APIConfiguration.model_validate(configuration))
 
     @classmethod
     def get_configuration_schema(
         cls,
-        configuration: QuiverConfiguration | None = None,
+        configuration: APIConfiguration | None = None,
     ) -> dict[str, Any]:
-        return QuiverConfiguration.model_json_schema()
+        return APIConfiguration.model_json_schema()
 
     @classmethod
     def get_runtime_schema(
         cls,
-        configuration: QuiverConfiguration,
+        configuration: APIConfiguration,
         runtime_data: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         return {
             "type": "object",
-            "title": "Quiver runtime configuration",
+            "title": "Semantic Layer API runtime configuration",
             "additionalProperties": True,
             "properties": {},
         }
@@ -77,19 +77,19 @@ class QuiverSemanticLayer(SemanticLayer[QuiverConfiguration, QuiverSemanticView]
     @classmethod
     def get_configuration_actions(
         cls,
-        configuration: QuiverConfiguration | None = None,
+        configuration: APIConfiguration | None = None,
     ) -> list[SemanticLayerAction]:
         connected = bool(configuration and has_usable_credentials(configuration))
         return [
             SemanticLayerAction(
                 id=ACTION_ID,
-                label="Connect to Quiver",
+                label="Connect account",
                 status="connected" if connected else "required",
                 required=True,
                 message=(
-                    "Your personal Quiver account is connected."
+                    "Your personal account is connected."
                     if connected
-                    else "Connect your personal Quiver account to continue."
+                    else "Connect your personal account to continue."
                 ),
             )
         ]
@@ -98,13 +98,13 @@ class QuiverSemanticLayer(SemanticLayer[QuiverConfiguration, QuiverSemanticView]
     def execute_configuration_action(
         cls,
         action_id: str,
-        configuration: QuiverConfiguration | None,
+        configuration: APIConfiguration | None,
         return_url: str | None = None,
     ) -> SemanticLayerActionResult:
         if action_id != ACTION_ID:
-            raise ValueError(f"Unknown Quiver action: {action_id}")
+            raise ValueError(f"Unknown Semantic Layer API action: {action_id}")
         if configuration is None:
-            raise ValueError("Complete the Quiver configuration before connecting.")
+            raise ValueError("Complete the API configuration before connecting.")
         return SemanticLayerActionResult(
             redirect_url=start_authorization(configuration),
         )
@@ -112,10 +112,10 @@ class QuiverSemanticLayer(SemanticLayer[QuiverConfiguration, QuiverSemanticView]
     def get_semantic_views(
         self,
         runtime_configuration: dict[str, Any],
-    ) -> set[QuiverSemanticView]:
-        client = QuiverClient(self.configuration, runtime_configuration)
+    ) -> set[APISemanticView]:
+        client = APIClient(self.configuration, runtime_configuration)
         return {
-            QuiverSemanticView(str(summary["name"]), client, summary)
+            APISemanticView(str(summary["name"]), client, summary)
             for summary in client.list_views()
             if summary.get("name")
         }
@@ -124,8 +124,8 @@ class QuiverSemanticLayer(SemanticLayer[QuiverConfiguration, QuiverSemanticView]
         self,
         name: str,
         additional_configuration: dict[str, Any],
-    ) -> QuiverSemanticView:
-        return QuiverSemanticView(
+    ) -> APISemanticView:
+        return APISemanticView(
             name,
-            QuiverClient(self.configuration, additional_configuration),
+            APIClient(self.configuration, additional_configuration),
         )

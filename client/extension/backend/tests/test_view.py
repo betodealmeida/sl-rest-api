@@ -22,7 +22,7 @@ from typing import Any
 
 from superset_core.semantic_layers.types import SemanticQuery
 
-from netflix.quiver_semantic_layer.view import QuiverSemanticView, _semantic_result
+from betodealmeida.semantic_layer_api.view import APISemanticView, _semantic_result
 
 
 class FakeClient:
@@ -32,7 +32,7 @@ class FakeClient:
     def get_view(self, name: str) -> dict[str, Any]:
         return {
             "name": name,
-            "uid": f"quiver.{name}",
+            "uid": f"api.{name}",
             "features": ["GROUP_LIMIT"],
             "dimensions": [
                 {
@@ -64,7 +64,7 @@ class FakeClient:
     def query(self, name: str, query: dict[str, Any]) -> dict[str, Any]:
         self.query_payload = query
         return {
-            "requests": [{"type": "quiver", "definition": "request-id"}],
+            "requests": [{"type": "api", "definition": "request-id"}],
             "results": {
                 "schema": [
                     {"name": "day", "type": "date"},
@@ -77,11 +77,11 @@ class FakeClient:
 
 def test_metadata_and_query_results_are_adapted() -> None:
     client = FakeClient()
-    view = QuiverSemanticView("sales", client)  # type: ignore[arg-type]
+    view = APISemanticView("sales", client)  # type: ignore[arg-type]
     dimension = next(iter(view.get_dimensions()))
     metric = next(iter(view.get_metrics()))
 
-    assert view.uid() == "quiver.sales"
+    assert view.uid() == "api.sales"
     assert dimension.verbose_name == "Sales day"
     assert metric.verbose_name == "Revenue"
     assert metric.d3format == "$,.2f"

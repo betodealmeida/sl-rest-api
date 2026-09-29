@@ -15,7 +15,4 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""Auto-discovered backend entrypoint for the Quiver extension."""
-
-from .api import QuiverOAuthAPI  # noqa: F401
-from .layer import QuiverSemanticLayer  # noqa: F401
+"""Semantic Layer API extension."""

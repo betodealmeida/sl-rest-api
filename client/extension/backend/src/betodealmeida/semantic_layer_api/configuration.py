@@ -15,26 +15,26 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""Configuration model for the Quiver semantic layer."""
+"""Configuration model for a Semantic Layer API service."""
 
 from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
 
-class QuiverConfiguration(BaseModel):
-    """Connection and OAuth2 client configuration for Quiver."""
+class APIConfiguration(BaseModel):
+    """Connection and OAuth2 client configuration for an API service."""
 
     model_config = ConfigDict(extra="forbid")
 
     api_url: str = Field(
         min_length=1,
-        title="Quiver API URL",
+        title="Semantic Layer API URL",
         description=(
-            "Base URL of the Quiver Semantic Layer REST API, including any "
+            "Base URL of the Semantic Layer REST API, including any "
             "path prefix but excluding /views."
         ),
-        examples=["https://quiver.example.com/api/semantic"],
+        examples=["https://semantic-layer.example.com/api/semantic"],
     )
     client_id: str = Field(
         min_length=1,
@@ -49,24 +49,24 @@ class QuiverConfiguration(BaseModel):
     authorization_url: str = Field(
         default="",
         title="Authorization URL",
-        description="Defaults to <Quiver API URL>/authorize.",
+        description="Defaults to <Semantic Layer API URL>/authorize.",
     )
     token_url: str = Field(
         default="",
         title="Token URL",
-        description="Defaults to <Quiver API URL>/token.",
+        description="Defaults to <Semantic Layer API URL>/token.",
     )
     scope: str = Field(
         default="",
         title="OAuth2 scopes",
-        description="Space-delimited scopes requested from Quiver.",
+        description="Space-delimited scopes requested from the OAuth2 provider.",
     )
     request_timeout: float = Field(
         default=60.0,
         ge=1.0,
         le=300.0,
         title="Request timeout",
-        description="Timeout for Quiver HTTP requests, in seconds.",
+        description="Timeout for Semantic Layer API requests, in seconds.",
     )
 
     @field_validator("api_url", "authorization_url", "token_url")

@@ -1,10 +1,10 @@
 [project]
-name = "netflix-quiver-semantic-layer"
+name = "betodealmeida-semantic-layer-api"
 version = "0.1.0"
 license = "Apache-2.0"
 
 [tool.apache_superset_extensions.build]
 include = [
-    "src/netflix/quiver_semantic_layer/**/*.py",
+    "src/betodealmeida/semantic_layer_api/**/*.py",
 ]
 exclude = []

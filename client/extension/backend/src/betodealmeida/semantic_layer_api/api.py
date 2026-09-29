@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""OAuth2 callback endpoint for the Quiver extension."""
+"""OAuth2 callback endpoint for the Semantic Layer API extension."""
 
 from __future__ import annotations
 
@@ -28,15 +28,15 @@ from .oauth import exchange_authorization_code, OAuth2ExchangeError
 
 
 @api(
-    id="quiver_oauth_api",
-    name="Quiver OAuth2 API",
-    description="OAuth2 callback for personal Quiver credentials.",
+    id="semantic_layer_api_oauth",
+    name="Semantic Layer API OAuth2",
+    description="OAuth2 callback for personal API credentials.",
     resource_name="oauth",
 )
-class QuiverOAuthAPI(RestApi):
+class OAuthAPI(RestApi):
     """Receive OAuth2 callbacks without exposing tokens to the browser."""
 
-    openapi_spec_tag = "Quiver"
+    openapi_spec_tag = "Semantic Layer API"
     class_permission_name = "SemanticLayer"
 
     @expose("/callback", methods=("GET",))
@@ -47,23 +47,23 @@ class QuiverOAuthAPI(RestApi):
         """Exchange an OAuth2 authorization code for a personal token."""
         if request.args.get("error"):
             return _message(
-                "Quiver authorization was denied. You can close this window.",
+                "Authorization was denied. You can close this window.",
                 400,
             )
         code = request.args.get("code", "")
         state = request.args.get("state", "")
         if not code or not state:
-            return _message("The Quiver OAuth2 callback is incomplete.", 400)
+            return _message("The OAuth2 callback is incomplete.", 400)
         try:
             exchange_authorization_code(code, state)
         except OAuth2ExchangeError:
-            return _message("Quiver authorization could not be completed.", 400)
-        return _message("Connected to Quiver. You can close this window.", 200)
+            return _message("Authorization could not be completed.", 400)
+        return _message("Account connected. You can close this window.", 200)
 
 
 def _message(message: str, status: int) -> Response:
     body = (
-        "<!doctype html><html><head><title>Quiver OAuth2</title></head>"
+        "<!doctype html><html><head><title>Semantic Layer API OAuth2</title></head>"
         f"<body><p>{message}</p></body></html>"
     )
     return Response(body, status=status, content_type="text/html; charset=utf-8")

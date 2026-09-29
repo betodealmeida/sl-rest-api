@@ -33,7 +33,7 @@ from superset_core.semantic_layers.layer import (
     SemanticLayerAuthenticationRequiredError,
 )
 
-from .configuration import QuiverConfiguration
+from .configuration import APIConfiguration
 
 ACTION_ID = "oauth2"
 PENDING_SECRET_KEY = "oauth2:pending"
@@ -45,20 +45,20 @@ class OAuth2ExchangeError(RuntimeError):
     """Raised when the OAuth2 provider rejects a callback or token request."""
 
 
-def credential_secret_key(configuration: QuiverConfiguration) -> str:
-    """Return a stable key shared by layers using the same Quiver identity."""
+def credential_secret_key(configuration: APIConfiguration) -> str:
+    """Return a stable key shared by layers using the same API identity."""
     identity = f"{configuration.api_url}\0{configuration.client_id}".encode()
     digest = hashlib.sha256(identity).hexdigest()
     return f"oauth2:token:{digest}"
 
 
-def get_stored_token(configuration: QuiverConfiguration) -> dict[str, Any] | None:
-    """Return the current user's token record for this Quiver identity."""
+def get_stored_token(configuration: APIConfiguration) -> dict[str, Any] | None:
+    """Return the current user's token record for this API identity."""
     value = get_context().storage.secrets.get(credential_secret_key(configuration))
     return dict(value) if isinstance(value, Mapping) else None
 
 
-def has_usable_credentials(configuration: QuiverConfiguration) -> bool:
+def has_usable_credentials(configuration: APIConfiguration) -> bool:
     """Return whether a token or refresh token can authenticate the user."""
     token = get_stored_token(configuration)
     return bool(
@@ -68,7 +68,7 @@ def has_usable_credentials(configuration: QuiverConfiguration) -> bool:
     )
 
 
-def start_authorization(configuration: QuiverConfiguration) -> str:
+def start_authorization(configuration: APIConfiguration) -> str:
     """Persist an OAuth2 transaction and return its authorization URL."""
     context = get_context()
     state = secrets.token_urlsafe(32)
@@ -129,7 +129,7 @@ def exchange_authorization_code(code: str, state: str) -> None:
     secrets_state.remove(PENDING_SECRET_KEY)
 
 
-def get_access_token(configuration: QuiverConfiguration) -> str:
+def get_access_token(configuration: APIConfiguration) -> str:
     """Return a valid access token, refreshing it when necessary."""
     secrets_state = get_context().storage.secrets
     key = credential_secret_key(configuration)
@@ -144,7 +144,7 @@ def get_access_token(configuration: QuiverConfiguration) -> str:
         secrets_state.remove(key)
         raise SemanticLayerAuthenticationRequiredError(
             ACTION_ID,
-            "Your Quiver authentication has expired.",
+            "Your Semantic Layer API authentication has expired.",
         )
     try:
         refreshed = _request_token(
@@ -161,7 +161,7 @@ def get_access_token(configuration: QuiverConfiguration) -> str:
         secrets_state.remove(key)
         raise SemanticLayerAuthenticationRequiredError(
             ACTION_ID,
-            "Your Quiver authentication must be renewed.",
+            "Your Semantic Layer API authentication must be renewed.",
         ) from ex
     if "refresh_token" not in refreshed:
         refreshed["refresh_token"] = refresh_token
@@ -169,7 +169,7 @@ def get_access_token(configuration: QuiverConfiguration) -> str:
     return str(refreshed["access_token"])
 
 
-def discard_token(configuration: QuiverConfiguration) -> None:
+def discard_token(configuration: APIConfiguration) -> None:
     """Remove the current user's token after an authentication rejection."""
     get_context().storage.secrets.remove(credential_secret_key(configuration))
 

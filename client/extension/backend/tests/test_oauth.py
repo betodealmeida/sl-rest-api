@@ -22,8 +22,8 @@ from urllib.parse import parse_qs, urlparse
 
 from flask import Flask
 
-from netflix.quiver_semantic_layer.configuration import QuiverConfiguration
-from netflix.quiver_semantic_layer import oauth
+from betodealmeida.semantic_layer_api.configuration import APIConfiguration
+from betodealmeida.semantic_layer_api import oauth
 
 
 class MemorySecrets:
@@ -40,9 +40,9 @@ class MemorySecrets:
         self.values.pop(key, None)
 
 
-def configuration() -> QuiverConfiguration:
-    return QuiverConfiguration(
-        api_url="https://quiver.example.test/api",
+def configuration() -> APIConfiguration:
+    return APIConfiguration(
+        api_url="https://semantic-layer.example.test/api",
         client_id="client-id",
         client_secret="client-secret",
         scope="views.read",
@@ -52,8 +52,8 @@ def configuration() -> QuiverConfiguration:
 def context(secrets: MemorySecrets) -> SimpleNamespace:
     return SimpleNamespace(
         extension=SimpleNamespace(
-            publisher="netflix",
-            name="quiver-semantic-layer",
+            publisher="betodealmeida",
+            name="semantic-layer-api",
         ),
         storage=SimpleNamespace(secrets=secrets),
     )
@@ -73,8 +73,8 @@ def test_authorization_and_callback_store_a_personal_token(monkeypatch) -> None:
         "response_type": ["code"],
         "client_id": ["client-id"],
         "redirect_uri": [
-            "https://superset.example.test/extensions/netflix/"
-            "quiver-semantic-layer/oauth/callback"
+            "https://superset.example.test/extensions/betodealmeida/"
+            "semantic-layer-api/oauth/callback"
         ],
         "state": ["state-value"],
         "scope": ["views.read"],

@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""Authenticated HTTP client for Quiver's Semantic Layer REST API."""
+"""Authenticated HTTP client for the Semantic Layer REST API."""
 
 from __future__ import annotations
 
@@ -27,22 +27,22 @@ from superset_core.semantic_layers.layer import (
     SemanticLayerAuthenticationRequiredError,
 )
 
-from .configuration import QuiverConfiguration
+from .configuration import APIConfiguration
 from .oauth import ACTION_ID, discard_token, get_access_token
 
 _REDIRECT_STATUSES = {301, 302, 303, 307, 308}
 
 
-class QuiverClientError(RuntimeError):
-    """Raised when Quiver returns a non-authentication API error."""
+class APIClientError(RuntimeError):
+    """Raised when the service returns a non-authentication API error."""
 
 
-class QuiverClient:
+class APIClient:
     """Small protocol client bound to one configuration and Superset user."""
 
     def __init__(
         self,
-        configuration: QuiverConfiguration,
+        configuration: APIConfiguration,
         additional_configuration: Mapping[str, Any] | None = None,
     ) -> None:
         self.configuration = configuration
@@ -58,7 +58,7 @@ class QuiverClient:
             missing_is_auth=True,
         )
         if not isinstance(payload, list):
-            raise QuiverClientError("Quiver returned an invalid view list.")
+            raise APIClientError("The API returned an invalid view list.")
         return [dict(item) for item in payload if isinstance(item, Mapping)]
 
     def get_view(self, name: str) -> dict[str, Any]:
@@ -68,7 +68,7 @@ class QuiverClient:
             {"additional_configuration": self.additional_configuration},
         )
         if not isinstance(payload, Mapping):
-            raise QuiverClientError("Quiver returned invalid view metadata.")
+            raise APIClientError("The API returned invalid view metadata.")
         return dict(payload)
 
     def query(self, name: str, query: Mapping[str, Any]) -> dict[str, Any]:
@@ -114,7 +114,7 @@ class QuiverClient:
             },
         )
         if not isinstance(payload, list):
-            raise QuiverClientError(f"Quiver returned invalid compatible {kind}.")
+            raise APIClientError(f"The API returned invalid compatible {kind}.")
         return [dict(item) for item in payload if isinstance(item, Mapping)]
 
     def _result(self, path: str, body: Mapping[str, Any]) -> dict[str, Any]:
@@ -123,7 +123,7 @@ class QuiverClient:
             {"additional_configuration": self.additional_configuration, **body},
         )
         if not isinstance(payload, Mapping):
-            raise QuiverClientError("Quiver returned an invalid semantic result.")
+            raise APIClientError("The API returned an invalid semantic result.")
         return dict(payload)
 
     def _post(
@@ -143,33 +143,31 @@ class QuiverClient:
                 allow_redirects=False,
             )
         except requests.RequestException as ex:
-            raise QuiverClientError("Unable to reach Quiver.") from ex
+            raise APIClientError("Unable to reach the Semantic Layer API.") from ex
 
         if response.status_code == 401 or response.status_code in _REDIRECT_STATUSES:
             discard_token(self.configuration)
             raise SemanticLayerAuthenticationRequiredError(
                 ACTION_ID,
-                "Quiver authentication is required.",
+                "Semantic Layer API authentication is required.",
             )
         if response.status_code == 404 and missing_is_auth:
             discard_token(self.configuration)
             raise SemanticLayerAuthenticationRequiredError(
                 ACTION_ID,
-                "Quiver authentication is required.",
+                "Semantic Layer API authentication is required.",
             )
         if response.status_code == 404:
-            raise QuiverClientError(
-                _response_detail(response, "Semantic view not found.")
-            )
+            raise APIClientError(_response_detail(response, "Semantic view not found."))
         try:
             response.raise_for_status()
             return response.json()
         except requests.RequestException as ex:
-            raise QuiverClientError(
-                _response_detail(response, "Quiver request failed.")
+            raise APIClientError(
+                _response_detail(response, "Semantic Layer API request failed.")
             ) from ex
         except ValueError as ex:
-            raise QuiverClientError("Quiver returned a non-JSON response.") from ex
+            raise APIClientError("The API returned a non-JSON response.") from ex
 
 
 def _response_detail(response: requests.Response, fallback: str) -> str:
