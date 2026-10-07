@@ -164,6 +164,14 @@ class SemanticAPIEngineSpec(ShillelaghEngineSpec):
         "semanticapi://<host>[:port]/?encryption=<true|false>&http_path=<path>"
     )
 
+    supports_catalog = True
+    supports_dynamic_catalog = True
+    supports_dynamic_schema = True
+    # Catalogs and schemas organize view discovery. SQL still addresses each
+    # view by its full, dot-delimited name as one quoted table identifier.
+    quote_table_includes_schema = False
+    try_remove_schema_from_table_name = False
+
     parameters_schema = SemanticAPIParametersSchema()
 
     # OAuth 2.0 — the authorisation and token URIs live on each database's
@@ -369,6 +377,10 @@ class SemanticAPIEngineSpec(ShillelaghEngineSpec):
             )
         if (http_path := connect_args.pop("http_path", None)) is not None:
             query["http_path"] = http_path
+        if catalog is not None:
+            query["pseudo_catalog"] = catalog
+        if schema is not None:
+            query["pseudo_schema"] = schema
         if query != dict(uri.query):
             uri = uri.set(query=query)
 
@@ -376,6 +388,22 @@ class SemanticAPIEngineSpec(ShillelaghEngineSpec):
             uri, connect_args, catalog, schema
         )
         return uri, connect_args
+
+    @classmethod
+    def get_default_catalog(cls, database: Database) -> str | None:
+        return min(database.get_all_catalog_names(), default=None)
+
+    @classmethod
+    def get_default_schema(cls, database: Database, catalog: str | None) -> str | None:
+        return min(database.get_all_schema_names(catalog=catalog), default=None)
+
+    @classmethod
+    def get_catalog_names(cls, database: Database, inspector: Inspector) -> set[str]:
+        return set(inspector.dialect.get_catalog_names())
+
+    @classmethod
+    def quote_table(cls, table: Table, dialect: Any) -> str:
+        return dialect.identifier_preparer.quote(table.table)
 
     @classmethod
     def select_star(cls, *args: Any, **kwargs: Any) -> str:

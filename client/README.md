@@ -35,7 +35,7 @@ The connection form asks for:
 If you'd rather skip the form, the equivalent SQLAlchemy URL is:
 
 ```
-semanticapi://<host>[:port]/?secure=<true|false>&additional_configuration=<urlencoded JSON>
+semanticapi://<host>[:port]/?encryption=<true|false>&additional_configuration=<urlencoded JSON>
 ```
 
 ## Standalone use (no Superset)
@@ -65,3 +65,18 @@ with engine.connect() as c:
 ```
 
 OAuth2 access tokens can be passed in the URL as `?access_token=...`.
+
+## Browsing cubes in Superset
+
+The first two dot-delimited parts of a view name are presented as a catalog and
+schema. For example,
+`demo.metrics.add_thumbs_demo_materialization.thumbs_cov_geo` appears under
+catalog `demo` and schema `metrics`. Superset still stores and queries the full
+view name as the table name, so the remaining parts are never lost. View names
+with fewer than three nonempty parts are not shown in the catalog/schema picker.
+
+The selected catalog and schema narrow the discovered tables and the adapter's
+registered tables for that connection. To browse multiple catalogs in Superset,
+enable **Allow changing catalogs** for the database. After upgrading an existing
+database connection, sync its permissions and grant access to the new catalog
+and schema permissions; old `main` schema permissions do not cover them.

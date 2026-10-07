@@ -44,3 +44,42 @@ def test_d3format_omits_unknown_or_invalid_format() -> None:
     assert d3format_from_metadata({"format": {"preset": "number", "precision": -1}}) == (
         ",.2f"
     )
+
+
+def test_pseudo_catalog_engine_spec() -> None:
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    import pytest
+    from sqlalchemy.dialects.sqlite import dialect
+    from sqlalchemy.engine.url import make_url
+
+    pytest.importorskip("superset")
+    from sl_db_engine_spec.engine_spec import SemanticAPIEngineSpec
+
+    spec = SemanticAPIEngineSpec
+    assert spec.supports_catalog
+    assert spec.supports_dynamic_catalog
+    assert spec.supports_dynamic_schema
+    assert not spec.quote_table_includes_schema
+
+    url, _ = spec.adjust_engine_params(
+        make_url("semanticapi://example.test"), {}, catalog="demo", schema="metrics"
+    )
+    assert url.query["pseudo_catalog"] == "demo"
+    assert url.query["pseudo_schema"] == "metrics"
+    table = SimpleNamespace(
+        table="demo.metrics.add_thumbs_demo_materialization.thumbs_cov_geo",
+        schema="metrics",
+        catalog="demo",
+    )
+    assert spec.quote_table(table, dialect()) == (
+        '"demo.metrics.add_thumbs_demo_materialization.thumbs_cov_geo"'
+    )
+
+    database = Mock()
+    database.get_all_catalog_names.return_value = {"prod", "demo"}
+    database.get_all_schema_names.return_value = {"sales", "metrics"}
+    assert spec.get_default_catalog(database) == "demo"
+    assert spec.get_default_schema(database, "demo") == "metrics"
+    database.get_all_schema_names.assert_called_with(catalog="demo")
