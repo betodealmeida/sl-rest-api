@@ -86,3 +86,10 @@ def test_pseudo_catalog_engine_spec() -> None:
     assert spec.get_default_catalog(database) == "demo%2Emetrics"
     assert spec.get_default_schema(database, "demo%2Emetrics") == "main"
     database.get_all_schema_names.assert_called_with(catalog="demo%2Emetrics")
+
+    inspector = Mock()
+    inspector.get_table_names.return_value = ["demo.metrics.main.download_session"]
+    assert spec.get_table_names(database, inspector, "main") == {
+        "demo.metrics.main.download_session"
+    }
+    inspector.get_table_names.assert_called_once_with(schema="main")

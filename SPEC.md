@@ -91,6 +91,17 @@ Request:
 {"runtime_configuration": {}}
 ```
 
+An optional `path` filters the list to views at or below a selected location in
+the discovery hierarchy. Each array element is an opaque value returned by
+`POST /views/discover/`; clients must not split values on punctuation. An absent
+or empty path lists all views, a partial path lists descendants, and a path
+through the final level lists views at that location. An unknown selection
+returns `404`; a path beyond the final level returns `400`.
+
+```json
+{"runtime_configuration": {}, "path": ["example.area", "main"]}
+```
+
 Response:
 
 ```json
@@ -115,6 +126,54 @@ Superset has the concept of [features](https://github.com/apache/superset/blob/9
 `GROUP_LIMIT` is a feature that allows specifying separate filter constraints for the group limit subquery. This is useful when you want to determine the top N groups using different criteria (e.g., a different time range) than the main query. For example, you might want to find the top 10 products by sales over the last 30 days, but then show daily sales for those products over the last 7 days. `GROUP_OTHERS` is an additional feature that allows the remaining categories to be grouped together in an "others" bucket. Since the implementation of these features is not trivial, they are considered optional.
 
 (`ADHOC_EXPRESSIONS_IN_ORDERBY` should be self-explanatory.)
+
+### `POST /views/discover/`
+
+Returns the available values at the next level of the view discovery
+hierarchy. The request contains the values selected at preceding levels,
+starting with an empty `path`. Servers define the level identifiers and
+display names; clients use the positions in `path`, not those identifiers, to
+select values. A value is an opaque, non-empty string and is sent unchanged in
+subsequent requests.
+
+Request for the first level:
+
+```json
+{"runtime_configuration": {}, "path": []}
+```
+
+Response:
+
+```json
+{
+    "level": {"id": "group", "display_name": "Group"},
+    "values": ["example.area", "shared"],
+    "has_next": true
+}
+```
+
+Request after selecting `example.area`:
+
+```json
+{"runtime_configuration": {}, "path": ["example.area"]}
+```
+
+Response:
+
+```json
+{
+    "level": {"id": "version", "display_name": "Version"},
+    "values": ["main", "preview"],
+    "has_next": false
+}
+```
+
+`has_next` indicates whether selecting a returned value leads to another
+level. Values are unique within the response and returned in a stable order.
+Discovery and filtered view listing must honor the caller's access. An unknown
+selection returns `404`; a request beyond the final level returns
+`400`. Servers that do not offer a
+discovery hierarchy may omit this endpoint; `POST /views/` remains available.
 
 ### `POST /views/{view_name}`
 

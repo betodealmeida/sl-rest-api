@@ -167,7 +167,7 @@ class SemanticAPIEngineSpec(ShillelaghEngineSpec):
     supports_catalog = True
     supports_dynamic_catalog = True
     supports_dynamic_schema = True
-    # Git root and branch labels organize view discovery. SQL still addresses
+    # The two discovery levels organize views. SQL still addresses
     # each view by its full, dot-delimited name as one quoted table identifier.
     quote_table_includes_schema = False
     try_remove_schema_from_table_name = False
@@ -400,6 +400,16 @@ class SemanticAPIEngineSpec(ShillelaghEngineSpec):
     @classmethod
     def get_catalog_names(cls, database: Database, inspector: Inspector) -> set[str]:
         return set(inspector.dialect.get_catalog_names())
+
+    @classmethod
+    def get_table_names(
+        cls,
+        database: Database,
+        inspector: Inspector,
+        schema: str | None,
+    ) -> set[str]:
+        """Pass the selected pseudo-schema through SQLite's table inspector."""
+        return set(inspector.get_table_names(schema=schema))
 
     @classmethod
     def quote_table(cls, table: Table, dialect: Any) -> str:

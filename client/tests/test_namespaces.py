@@ -22,6 +22,11 @@ def response(payload):
     return result
 
 
+def not_found():
+    result = Mock(status_code=404)
+    return result
+
+
 def test_view_namespace_requires_catalog_schema_and_table() -> None:
     assert view_namespace(VIEWS[0]) == ("demo", "metrics")
     assert view_namespace("demo.metrics") is None
@@ -32,6 +37,74 @@ def test_namespace_labels_escape_dots_and_percent_signs() -> None:
     assert encode_namespace_label("demo.metrics") == "demo%2Emetrics"
     assert encode_namespace_label("demo%2Emetrics") == "demo%252Emetrics"
     assert encode_namespace_label("feature/foo.bar") == "feature%2Ffoo%2Ebar"
+
+
+def test_generic_discovery_and_filtered_view_listing() -> None:
+    dialect_registry.register(
+        "semanticapi", "sl_db_engine_spec.dialect", "SemanticAPIDialect"
+    )
+    view_name = "demo.metrics.main.download_session"
+    requests = []
+
+    def post(url, **kwargs):
+        body = kwargs["json"]
+        requests.append((url, body))
+        if url.endswith("/views/discover/"):
+            if body["path"] == []:
+                return response(
+                    {
+                        "level": {"id": "namespace", "display_name": "Namespace"},
+                        "values": ["demo.metrics", "shared"],
+                        "has_next": True,
+                    }
+                )
+            if body["path"] == ["demo.metrics"]:
+                return response(
+                    {
+                        "level": {"id": "branch", "display_name": "Branch"},
+                        "values": ["main", "feature/foo.bar"],
+                        "has_next": False,
+                    }
+                )
+        if url.endswith("/views/"):
+            if body.get("path") == ["demo.metrics", "main"]:
+                return response([{"name": view_name}])
+            return response([])
+        if url.endswith("/views/list"):
+            return response([])
+        raise AssertionError(f"Unexpected request: {url}")
+
+    with patch("sl_db_engine_spec.dialect.requests.post", side_effect=post):
+        engine = create_engine("semanticapi://example.test")
+        assert engine.dialect.get_catalog_names() == ["demo%2Emetrics", "shared"]
+        engine.dispose()
+
+        catalog_url = URL.create(
+            "semanticapi",
+            host="example.test",
+            query={"pseudo_catalog": "demo%2Emetrics"},
+        )
+        catalog_engine = create_engine(catalog_url)
+        assert inspect(catalog_engine).get_schema_names() == [
+            "main", "feature%2Ffoo%2Ebar"
+        ]
+        catalog_engine.dispose()
+
+        scoped_url = URL.create(
+            "semanticapi",
+            host="example.test",
+            query={"pseudo_catalog": "demo%2Emetrics", "pseudo_schema": "main"},
+        )
+        scoped = create_engine(scoped_url)
+        assert inspect(scoped).get_table_names(schema="main") == [view_name]
+        assert scoped.dialect._adapter_cls.table_names == {view_name}
+        scoped.dispose()
+
+    assert any(
+        body.get("path") == ["demo.metrics", "main"]
+        for url, body in requests
+        if url.endswith("/views/")
+    )
 
 
 def test_explicit_namespace_and_branch_control_discovery() -> None:
@@ -54,6 +127,8 @@ def test_explicit_namespace_and_branch_control_discovery() -> None:
     queries = []
 
     def post(url, **kwargs):
+        if url.endswith("/views/discover/"):
+            return not_found()
         if url.endswith("/views/list"):
             return response(views)
         if url.endswith("/views/demo.metrics.main.download_session/query"):
@@ -114,6 +189,8 @@ def test_catalog_schema_and_table_discovery() -> None:
     queries = []
 
     def post(url, **kwargs):
+        if url.endswith("/views/discover/"):
+            return not_found()
         if url.endswith("/views/list"):
             return response([{"name": name} for name in VIEWS])
         if url.endswith(

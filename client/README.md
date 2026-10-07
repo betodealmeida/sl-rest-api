@@ -68,19 +68,19 @@ OAuth2 access tokens can be passed in the URL as `?access_token=...`.
 
 ## Browsing cubes in Superset
 
-When a server returns `namespace` and `branch` in `POST /views/`, the Git root
-becomes the Superset catalog and the branch becomes its schema. For example,
+The two levels returned by `POST /views/discover/` become Superset
+catalogs and schemas. For example,
 `demo.metrics.main.download_session` appears under catalog `demo%2Emetrics`
-and schema `main`. Dots and other reserved characters are percent-encoded in
+and schema `main` when the server places it at path `["demo.metrics", "main"]`.
+Dots and other reserved characters are percent-encoded in
 the selector labels so Superset's catalog and schema permission parser keeps
 each label as one component. Superset still stores and queries the full view
 name as the table name.
 
-If any list entry has Git location fields, entries without both a nonempty
-`namespace` and `branch` are omitted from catalog/schema browsing. Servers
-that do not provide these fields use the older first-two-name-parts grouping
-for compatibility. A server must provide Git location fields to guarantee
-that the schema names are actual branches.
+The client sends selected values unchanged in the JSON `path` when listing
+views. It requires exactly two discovery levels. For older servers without
+`/views/discover/`, it still reads `namespace` and `branch` fields from view
+summaries, or groups views by the first two parts of their names.
 
 The selected catalog and schema narrow the discovered tables and the adapter's
 registered tables for that connection. To browse multiple catalogs in Superset,

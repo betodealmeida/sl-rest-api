@@ -26,7 +26,7 @@ from __future__ import annotations
 import hashlib
 import json
 from typing import Any, ClassVar, cast
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 
 import requests
 import sqlalchemy.types
@@ -209,6 +209,7 @@ class SemanticAPIDialect(APSWDialect):
         self._schema: str | None = None
         self._views: list[str] = []
         self._view_locations: dict[str, tuple[str, str]] = {}
+        self._discovery_supported: bool | None = None
 
     def create_connect_args(self, url: URL) -> tuple[tuple[()], dict[str, Any]]:
         encryption = str(url.query.get("encryption", "")).lower() in _TRUTHY
@@ -248,22 +249,26 @@ class SemanticAPIDialect(APSWDialect):
             },
         )
 
-    def _list_views(self) -> tuple[list[str], dict[str, tuple[str, str]]]:
+    def _post(self, endpoint: str, body: dict[str, Any]) -> requests.Response:
         headers: dict[str, str] = {}
         if self._access_token:
             headers["Authorization"] = f"Bearer {self._access_token}"
         response = requests.post(
-            f"{self._base_url}/views/list",
-            json={"runtime_configuration": self._configuration},
+            f"{self._base_url}{endpoint}",
+            json=body,
             headers=headers,
             timeout=_DEFAULT_TIMEOUT,
         )
+        return response
+
+    @staticmethod
+    def _check_response(response: requests.Response, legacy: bool = False) -> None:
         # Surface as the canonical shillelagh exception so the Superset engine
         # spec's ``needs_oauth2`` recognises it and starts the dance. Some
         # servers (e.g. Quiver) don't return 401 for unauthenticated requests
         # to this endpoint, only 404, so both are treated as an auth failure.
         # Some tests also showed a 307 being returned.
-        if response.status_code in (307, 401, 404):
+        if response.status_code in ((307, 401, 404) if legacy else (307, 401)):
             detail = "Authentication required."
             try:
                 detail = response.json().get("detail", detail)
@@ -271,6 +276,41 @@ class SemanticAPIDialect(APSWDialect):
                 pass
             raise UnauthenticatedError(detail)
         response.raise_for_status()
+
+    def _discover(self, path: list[str]) -> dict[str, Any] | None:
+        if self._discovery_supported is False:
+            return None
+        response = self._post(
+            "/views/discover/",
+            {"runtime_configuration": self._configuration, "path": path},
+        )
+        if response.status_code == 404 and self._discovery_supported is None:
+            self._discovery_supported = False
+            return None
+        self._check_response(response)
+        result = response.json()
+        if (
+            not isinstance(result, dict)
+            or not isinstance(result.get("values"), list)
+            or any(not isinstance(value, str) or not value for value in result["values"])
+        ):
+            raise ValueError("Invalid semantic view discovery response")
+        if path and result.get("has_next") is not False:
+            raise ValueError("The Semantic Layer API must expose exactly two levels")
+        if not path and result.get("has_next") is not True:
+            raise ValueError("The Semantic Layer API must expose exactly two levels")
+        self._discovery_supported = True
+        return result
+
+    def _list_views(
+        self,
+        path: list[str] | None = None,
+    ) -> tuple[list[str], dict[str, tuple[str, str]]]:
+        body: dict[str, Any] = {"runtime_configuration": self._configuration}
+        if path is not None:
+            body["path"] = path
+        response = self._post("/views/" if path is not None else "/views/list", body)
+        self._check_response(response, legacy=path is None)
         entries = response.json()
         names = sorted(view["name"] for view in entries)
         # Keep older servers browsable. Once a server advertises Git locations,
@@ -282,7 +322,12 @@ class SemanticAPIDialect(APSWDialect):
         locations: dict[str, tuple[str, str]] = {}
         for view in entries:
             name = view["name"]
-            if has_locations:
+            if path is not None and len(path) == 2:
+                locations[name] = (
+                    encode_namespace_label(path[0]),
+                    encode_namespace_label(path[1]),
+                )
+            elif has_locations:
                 namespace, branch = view.get("namespace"), view.get("branch")
                 if (
                     isinstance(namespace, str)
@@ -299,15 +344,26 @@ class SemanticAPIDialect(APSWDialect):
         return names, locations
 
     def _refresh_views(self) -> None:
-        self._views, self._view_locations = self._list_views()
+        path = None
+        if self._discover([]) is not None:
+            path = []
+            if self._catalog:
+                path.append(unquote(self._catalog))
+                if self._schema:
+                    path.append(unquote(self._schema))
+        self._views, self._view_locations = self._list_views(path)
         if self._adapter_cls is not None:
             self._adapter_cls.table_names = {
                 view
                 for view in self._views
-                if _in_scope(self._view_locations.get(view), self._catalog, self._schema)
+                if (path is not None and len(path) == 2)
+                or (not self._catalog and not self._schema)
+                or _in_scope(self._view_locations.get(view), self._catalog, self._schema)
             }
 
     def get_catalog_names(self, connection: Connection | None = None) -> list[str]:
+        if result := self._discover([]):
+            return [encode_namespace_label(value) for value in result["values"]]
         self._refresh_views()
         return sorted({location[0] for location in self._view_locations.values()})
 
@@ -318,6 +374,14 @@ class SemanticAPIDialect(APSWDialect):
         sqlite_include_internal: bool = False,
         **kwargs: Any,
     ) -> list[str]:
+        if self._catalog and schema and self._discover([]) is not None:
+            if self._schema and schema != self._schema:
+                return []
+            path = [unquote(self._catalog), unquote(schema)]
+            self._views, self._view_locations = self._list_views(path)
+            if self._adapter_cls is not None:
+                self._adapter_cls.table_names.update(self._views)
+            return self._views
         self._refresh_views()
         return [
             view
@@ -388,6 +452,8 @@ class SemanticAPIDialect(APSWDialect):
         connection: Connection,
         **kwargs: Any,
     ) -> list[str]:
+        if self._catalog and (result := self._discover([unquote(self._catalog)])):
+            return [encode_namespace_label(value) for value in result["values"]]
         self._refresh_views()
         return sorted(
             {
