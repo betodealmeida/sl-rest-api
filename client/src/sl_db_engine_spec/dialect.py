@@ -26,6 +26,7 @@ from __future__ import annotations
 import hashlib
 import json
 from typing import Any, ClassVar, cast
+from urllib.parse import quote
 
 import requests
 import sqlalchemy.types
@@ -48,6 +49,13 @@ _TRUTHY = {"1", "true", "yes", "on"}
 _DEFAULT_TIMEOUT = 60.0
 
 
+def encode_namespace_label(value: str) -> str:
+    """Encode a catalog or schema for Superset's dot-delimited permissions."""
+    # urllib.quote always leaves ASCII dots unescaped, even with safe="".
+    # Encode them explicitly so a multi-part Git root remains one component.
+    return quote(value, safe="").replace(".", "%2E")
+
+
 def view_namespace(name: str) -> tuple[str, str] | None:
     """Return the pseudo-catalog and schema of a qualified view name."""
     parts = name.split(".", 2)
@@ -56,10 +64,13 @@ def view_namespace(name: str) -> tuple[str, str] | None:
     return parts[0], parts[1]
 
 
-def _in_scope(name: str, catalog: str | None, schema: str | None) -> bool:
-    namespace = view_namespace(name)
-    return (catalog is None or namespace is not None and namespace[0] == catalog) and (
-        schema is None or namespace is not None and namespace[1] == schema
+def _in_scope(
+    location: tuple[str, str] | None,
+    catalog: str | None,
+    schema: str | None,
+) -> bool:
+    return (catalog is None or location is not None and location[0] == catalog) and (
+        schema is None or location is not None and location[1] == schema
     )
 
 
@@ -197,6 +208,7 @@ class SemanticAPIDialect(APSWDialect):
         self._catalog: str | None = None
         self._schema: str | None = None
         self._views: list[str] = []
+        self._view_locations: dict[str, tuple[str, str]] = {}
 
     def create_connect_args(self, url: URL) -> tuple[tuple[()], dict[str, Any]]:
         encryption = str(url.query.get("encryption", "")).lower() in _TRUTHY
@@ -236,7 +248,7 @@ class SemanticAPIDialect(APSWDialect):
             },
         )
 
-    def _list_views(self) -> list[str]:
+    def _list_views(self) -> tuple[list[str], dict[str, tuple[str, str]]]:
         headers: dict[str, str] = {}
         if self._access_token:
             headers["Authorization"] = f"Bearer {self._access_token}"
@@ -259,22 +271,45 @@ class SemanticAPIDialect(APSWDialect):
                 pass
             raise UnauthenticatedError(detail)
         response.raise_for_status()
-        return sorted(view["name"] for view in response.json())
+        entries = response.json()
+        names = sorted(view["name"] for view in entries)
+        # Keep older servers browsable. Once a server advertises Git locations,
+        # only explicitly mapped views are shown; guessing from name parts
+        # would mislabel roots such as "demo.metrics".
+        has_locations = any(
+            "namespace" in view or "branch" in view for view in entries
+        )
+        locations: dict[str, tuple[str, str]] = {}
+        for view in entries:
+            name = view["name"]
+            if has_locations:
+                namespace, branch = view.get("namespace"), view.get("branch")
+                if (
+                    isinstance(namespace, str)
+                    and namespace
+                    and isinstance(branch, str)
+                    and branch
+                ):
+                    locations[name] = (
+                        encode_namespace_label(namespace),
+                        encode_namespace_label(branch),
+                    )
+            elif namespace := view_namespace(name):
+                locations[name] = namespace
+        return names, locations
 
     def _refresh_views(self) -> None:
-        self._views = self._list_views()
+        self._views, self._view_locations = self._list_views()
         if self._adapter_cls is not None:
             self._adapter_cls.table_names = {
                 view
                 for view in self._views
-                if _in_scope(view, self._catalog, self._schema)
+                if _in_scope(self._view_locations.get(view), self._catalog, self._schema)
             }
 
     def get_catalog_names(self, connection: Connection | None = None) -> list[str]:
         self._refresh_views()
-        return sorted(
-            {namespace[0] for view in self._views if (namespace := view_namespace(view))}
-        )
+        return sorted({location[0] for location in self._view_locations.values()})
 
     def get_table_names(
         self,
@@ -287,9 +322,9 @@ class SemanticAPIDialect(APSWDialect):
         return [
             view
             for view in self._views
-            if (namespace := view_namespace(view)) is not None
-            and _in_scope(view, self._catalog, self._schema)
-            and (schema is None or namespace[1] == schema)
+            if (location := self._view_locations.get(view)) is not None
+            and _in_scope(location, self._catalog, self._schema)
+            and (schema is None or location[1] == schema)
         ]
 
     def get_view_names(
@@ -313,9 +348,9 @@ class SemanticAPIDialect(APSWDialect):
         return (
             self._adapter_cls is not None
             and table_name in self._adapter_cls.table_names
-            and (namespace := view_namespace(table_name)) is not None
-            and _in_scope(table_name, self._catalog, self._schema)
-            and (schema is None or namespace[1] == schema)
+            and (location := self._view_locations.get(table_name)) is not None
+            and _in_scope(location, self._catalog, self._schema)
+            and (schema is None or location[1] == schema)
         )
 
     def get_columns(
@@ -356,10 +391,9 @@ class SemanticAPIDialect(APSWDialect):
         self._refresh_views()
         return sorted(
             {
-                namespace[1]
-                for view in self._views
-                if (namespace := view_namespace(view)) is not None
-                and (self._catalog is None or namespace[0] == self._catalog)
+                location[1]
+                for location in self._view_locations.values()
+                if self._catalog is None or location[0] == self._catalog
             }
         )
 

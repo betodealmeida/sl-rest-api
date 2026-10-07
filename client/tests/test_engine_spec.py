@@ -64,22 +64,25 @@ def test_pseudo_catalog_engine_spec() -> None:
     assert not spec.quote_table_includes_schema
 
     url, _ = spec.adjust_engine_params(
-        make_url("semanticapi://example.test"), {}, catalog="demo", schema="metrics"
+        make_url("semanticapi://example.test"),
+        {},
+        catalog="demo%2Emetrics",
+        schema="main",
     )
-    assert url.query["pseudo_catalog"] == "demo"
-    assert url.query["pseudo_schema"] == "metrics"
+    assert url.query["pseudo_catalog"] == "demo%2Emetrics"
+    assert url.query["pseudo_schema"] == "main"
     table = SimpleNamespace(
-        table="demo.metrics.add_thumbs_demo_materialization.thumbs_cov_geo",
-        schema="metrics",
-        catalog="demo",
+        table="demo.metrics.main.download_session",
+        schema="main",
+        catalog="demo%2Emetrics",
     )
     assert spec.quote_table(table, dialect()) == (
-        '"demo.metrics.add_thumbs_demo_materialization.thumbs_cov_geo"'
+        '"demo.metrics.main.download_session"'
     )
 
     database = Mock()
-    database.get_all_catalog_names.return_value = {"prod", "demo"}
-    database.get_all_schema_names.return_value = {"sales", "metrics"}
-    assert spec.get_default_catalog(database) == "demo"
-    assert spec.get_default_schema(database, "demo") == "metrics"
-    database.get_all_schema_names.assert_called_with(catalog="demo")
+    database.get_all_catalog_names.return_value = {"shared", "demo%2Emetrics"}
+    database.get_all_schema_names.return_value = {"main", "test"}
+    assert spec.get_default_catalog(database) == "demo%2Emetrics"
+    assert spec.get_default_schema(database, "demo%2Emetrics") == "main"
+    database.get_all_schema_names.assert_called_with(catalog="demo%2Emetrics")

@@ -167,8 +167,8 @@ class SemanticAPIEngineSpec(ShillelaghEngineSpec):
     supports_catalog = True
     supports_dynamic_catalog = True
     supports_dynamic_schema = True
-    # Catalogs and schemas organize view discovery. SQL still addresses each
-    # view by its full, dot-delimited name as one quoted table identifier.
+    # Git root and branch labels organize view discovery. SQL still addresses
+    # each view by its full, dot-delimited name as one quoted table identifier.
     quote_table_includes_schema = False
     try_remove_schema_from_table_name = False
 
