@@ -71,6 +71,7 @@ def test_catalog_schema_and_table_discovery() -> None:
         inspector = inspect(scoped)
         assert inspector.get_schema_names() == ["metrics", "sales"]
         assert inspector.get_table_names(schema="metrics") == [VIEWS[0]]
+        assert inspector.get_view_names(schema="metrics") == []
         assert inspector.get_table_names(schema="sales") == []
         assert inspector.has_table(VIEWS[0], schema="metrics")
         assert not inspector.has_table(VIEWS[2], schema="metrics")

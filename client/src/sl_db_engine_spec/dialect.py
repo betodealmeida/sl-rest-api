@@ -292,6 +292,17 @@ class SemanticAPIDialect(APSWDialect):
             and (schema is None or namespace[1] == schema)
         ]
 
+    def get_view_names(
+        self,
+        connection: Connection,
+        schema: str | None = None,
+        **kwargs: Any,
+    ) -> list[str]:
+        # Semantic views are exposed as virtual tables. SQLite's inherited
+        # implementation queries <schema>.sqlite_master, but pseudo-schemas
+        # are not attached SQLite databases.
+        return []
+
     def has_table(
         self,
         connection: Connection,
