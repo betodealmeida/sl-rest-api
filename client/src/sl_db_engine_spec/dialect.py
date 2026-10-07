@@ -56,6 +56,21 @@ def encode_namespace_label(value: str) -> str:
     return quote(value, safe="").replace(".", "%2E")
 
 
+def encode_schema_label(value: str | None) -> str:
+    """Give an absent level a distinct Superset label from every string value."""
+    if value is None:
+        return "unversioned"
+    label = encode_namespace_label(value)
+    return f"~{label}" if label == "unversioned" or label.startswith("~") else label
+
+
+def decode_schema_label(label: str) -> str | None:
+    """Recover the JSON discovery value from its Superset schema label."""
+    if label == "unversioned":
+        return None
+    return unquote(label[1:] if label.startswith("~") else label)
+
+
 def view_namespace(name: str) -> tuple[str, str] | None:
     """Return the pseudo-catalog and schema of a qualified view name."""
     parts = name.split(".", 2)
@@ -277,7 +292,7 @@ class SemanticAPIDialect(APSWDialect):
             raise UnauthenticatedError(detail)
         response.raise_for_status()
 
-    def _discover(self, path: list[str]) -> dict[str, Any] | None:
+    def _discover(self, path: list[str | None]) -> dict[str, Any] | None:
         if self._discovery_supported is False:
             return None
         response = self._post(
@@ -292,7 +307,11 @@ class SemanticAPIDialect(APSWDialect):
         if (
             not isinstance(result, dict)
             or not isinstance(result.get("values"), list)
-            or any(not isinstance(value, str) or not value for value in result["values"])
+            or any(
+                value is not None and (not isinstance(value, str) or not value)
+                for value in result["values"]
+            )
+            or (not path and None in result["values"])
         ):
             raise ValueError("Invalid semantic view discovery response")
         if path and result.get("has_next") is not False:
@@ -304,7 +323,7 @@ class SemanticAPIDialect(APSWDialect):
 
     def _list_views(
         self,
-        path: list[str] | None = None,
+        path: list[str | None] | None = None,
     ) -> tuple[list[str], dict[str, tuple[str, str]]]:
         body: dict[str, Any] = {"runtime_configuration": self._configuration}
         if path is not None:
@@ -324,8 +343,8 @@ class SemanticAPIDialect(APSWDialect):
             name = view["name"]
             if path is not None and len(path) == 2:
                 locations[name] = (
-                    encode_namespace_label(path[0]),
-                    encode_namespace_label(path[1]),
+                    encode_namespace_label(cast(str, path[0])),
+                    encode_schema_label(path[1]),
                 )
             elif has_locations:
                 namespace, branch = view.get("namespace"), view.get("branch")
@@ -337,7 +356,7 @@ class SemanticAPIDialect(APSWDialect):
                 ):
                     locations[name] = (
                         encode_namespace_label(namespace),
-                        encode_namespace_label(branch),
+                        encode_schema_label(branch),
                     )
             elif namespace := view_namespace(name):
                 locations[name] = namespace
@@ -350,7 +369,7 @@ class SemanticAPIDialect(APSWDialect):
             if self._catalog:
                 path.append(unquote(self._catalog))
                 if self._schema:
-                    path.append(unquote(self._schema))
+                    path.append(decode_schema_label(self._schema))
         self._views, self._view_locations = self._list_views(path)
         if self._adapter_cls is not None:
             self._adapter_cls.table_names = {
@@ -377,7 +396,7 @@ class SemanticAPIDialect(APSWDialect):
         if self._catalog and schema and self._discover([]) is not None:
             if self._schema and schema != self._schema:
                 return []
-            path = [unquote(self._catalog), unquote(schema)]
+            path = [unquote(self._catalog), decode_schema_label(schema)]
             self._views, self._view_locations = self._list_views(path)
             if self._adapter_cls is not None:
                 self._adapter_cls.table_names.update(self._views)
@@ -453,7 +472,7 @@ class SemanticAPIDialect(APSWDialect):
         **kwargs: Any,
     ) -> list[str]:
         if self._catalog and (result := self._discover([unquote(self._catalog)])):
-            return [encode_namespace_label(value) for value in result["values"]]
+            return [encode_schema_label(value) for value in result["values"]]
         self._refresh_views()
         return sorted(
             {

@@ -6,7 +6,12 @@ from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.dialects import registry as dialect_registry
 from sqlalchemy.engine.url import URL
 
-from sl_db_engine_spec.dialect import encode_namespace_label, view_namespace
+from sl_db_engine_spec.dialect import (
+    decode_schema_label,
+    encode_namespace_label,
+    encode_schema_label,
+    view_namespace,
+)
 
 
 VIEWS = [
@@ -37,6 +42,12 @@ def test_namespace_labels_escape_dots_and_percent_signs() -> None:
     assert encode_namespace_label("demo.metrics") == "demo%2Emetrics"
     assert encode_namespace_label("demo%2Emetrics") == "demo%252Emetrics"
     assert encode_namespace_label("feature/foo.bar") == "feature%2Ffoo%2Ebar"
+    assert encode_schema_label(None) == "unversioned"
+    assert encode_schema_label("unversioned") == "~unversioned"
+    assert encode_schema_label("~scratch") == "~~scratch"
+    assert decode_schema_label("unversioned") is None
+    assert decode_schema_label("~unversioned") == "unversioned"
+    assert decode_schema_label("~~scratch") == "~scratch"
 
 
 def test_generic_discovery_and_filtered_view_listing() -> None:
@@ -44,6 +55,8 @@ def test_generic_discovery_and_filtered_view_listing() -> None:
         "semanticapi", "sl_db_engine_spec.dialect", "SemanticAPIDialect"
     )
     view_name = "demo.metrics.main.download_session"
+    plain_view = "system.dj.superset_unversioned_demo"
+    literal_view = "demo.metrics.literal.report"
     requests = []
 
     def post(url, **kwargs):
@@ -54,7 +67,7 @@ def test_generic_discovery_and_filtered_view_listing() -> None:
                 return response(
                     {
                         "level": {"id": "namespace", "display_name": "Namespace"},
-                        "values": ["demo.metrics", "shared"],
+                        "values": ["demo.metrics", "shared", "system.dj"],
                         "has_next": True,
                     }
                 )
@@ -62,13 +75,25 @@ def test_generic_discovery_and_filtered_view_listing() -> None:
                 return response(
                     {
                         "level": {"id": "branch", "display_name": "Branch"},
-                        "values": ["main", "feature/foo.bar"],
+                        "values": ["main", "feature/foo.bar", "unversioned"],
+                        "has_next": False,
+                    }
+                )
+            if body["path"] == ["system.dj"]:
+                return response(
+                    {
+                        "level": {"id": "branch", "display_name": "Branch"},
+                        "values": [None],
                         "has_next": False,
                     }
                 )
         if url.endswith("/views/"):
             if body.get("path") == ["demo.metrics", "main"]:
                 return response([{"name": view_name}])
+            if body.get("path") == ["demo.metrics", "unversioned"]:
+                return response([{"name": literal_view}])
+            if body.get("path") == ["system.dj", None]:
+                return response([{"name": plain_view}])
             return response([])
         if url.endswith("/views/list"):
             return response([])
@@ -76,7 +101,9 @@ def test_generic_discovery_and_filtered_view_listing() -> None:
 
     with patch("sl_db_engine_spec.dialect.requests.post", side_effect=post):
         engine = create_engine("semanticapi://example.test")
-        assert engine.dialect.get_catalog_names() == ["demo%2Emetrics", "shared"]
+        assert engine.dialect.get_catalog_names() == [
+            "demo%2Emetrics", "shared", "system%2Edj"
+        ]
         engine.dispose()
 
         catalog_url = URL.create(
@@ -86,7 +113,7 @@ def test_generic_discovery_and_filtered_view_listing() -> None:
         )
         catalog_engine = create_engine(catalog_url)
         assert inspect(catalog_engine).get_schema_names() == [
-            "main", "feature%2Ffoo%2Ebar"
+            "main", "feature%2Ffoo%2Ebar", "~unversioned"
         ]
         catalog_engine.dispose()
 
@@ -100,8 +127,36 @@ def test_generic_discovery_and_filtered_view_listing() -> None:
         assert scoped.dialect._adapter_cls.table_names == {view_name}
         scoped.dispose()
 
+        plain_url = URL.create(
+            "semanticapi",
+            host="example.test",
+            query={"pseudo_catalog": "system%2Edj", "pseudo_schema": "unversioned"},
+        )
+        plain_engine = create_engine(plain_url)
+        assert inspect(plain_engine).get_schema_names() == ["unversioned"]
+        assert inspect(plain_engine).get_table_names(schema="unversioned") == [
+            plain_view
+        ]
+        plain_engine.dispose()
+
+        literal_url = URL.create(
+            "semanticapi",
+            host="example.test",
+            query={"pseudo_catalog": "demo%2Emetrics", "pseudo_schema": "~unversioned"},
+        )
+        literal_engine = create_engine(literal_url)
+        assert inspect(literal_engine).get_table_names(schema="~unversioned") == [
+            literal_view
+        ]
+        literal_engine.dispose()
+
     assert any(
         body.get("path") == ["demo.metrics", "main"]
+        for url, body in requests
+        if url.endswith("/views/")
+    )
+    assert any(
+        body.get("path") == ["system.dj", None]
         for url, body in requests
         if url.endswith("/views/")
     )

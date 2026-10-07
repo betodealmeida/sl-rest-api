@@ -93,8 +93,10 @@ Request:
 
 An optional `path` filters the list to views at or below a selected location in
 the discovery hierarchy. Each array element is an opaque value returned by
-`POST /views/discover/`; clients must not split values on punctuation. An absent
-or empty path lists all views, a partial path lists descendants, and a path
+`POST /views/discover/`; clients must not split values on punctuation. The JSON
+value `null` is distinct from every string, including `"null"`, and represents
+an absent value at that level. An absent or empty path lists all views, a
+partial path lists descendants, and a path
 through the final level lists views at that location. An unknown selection
 returns `404`; a path beyond the final level returns `400`.
 
@@ -133,8 +135,9 @@ Returns the available values at the next level of the view discovery
 hierarchy. The request contains the values selected at preceding levels,
 starting with an empty `path`. Servers define the level identifiers and
 display names; clients use the positions in `path`, not those identifiers, to
-select values. A value is an opaque, non-empty string and is sent unchanged in
-subsequent requests.
+select values. A value is an opaque, non-empty string or JSON `null` and is sent
+unchanged in subsequent requests. `null` represents an absent value at that
+level; it is a selectable value, not an omitted path element.
 
 Request for the first level:
 
@@ -163,10 +166,13 @@ Response:
 ```json
 {
     "level": {"id": "version", "display_name": "Version"},
-    "values": ["main", "preview"],
+    "values": ["main", "preview", null],
     "has_next": false
 }
 ```
+
+Selecting the absent value uses `{"path": ["example.area", null]}`. This is
+different from selecting the string `"null"`.
 
 `has_next` indicates whether selecting a returned value leads to another
 level. Values are unique within the response and returned in a stable order.

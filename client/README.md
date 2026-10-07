@@ -82,6 +82,11 @@ views. It requires exactly two discovery levels. For older servers without
 `/views/discover/`, it still reads `namespace` and `branch` fields from view
 summaries, or groups views by the first two parts of their names.
 
+When the second discovery value is JSON `null`, Superset displays the schema
+`unversioned` and sends `null` back in filtered view requests. A real string
+value `"unversioned"` displays as `~unversioned`; real values beginning with
+`~` have that prefix doubled, keeping every schema label distinct.
+
 The selected catalog and schema narrow the discovered tables and the adapter's
 registered tables for that connection. To browse multiple catalogs in Superset,
 enable **Allow changing catalogs** for the database. After upgrading an existing
