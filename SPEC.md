@@ -151,7 +151,8 @@ Response:
 {
     "level": {"id": "group", "display_name": "Group"},
     "values": ["example.area", "shared"],
-    "has_next": true
+    "has_next": true,
+    "next_level": {"id": "version", "display_name": "Version"}
 }
 ```
 
@@ -175,7 +176,13 @@ Selecting the absent value uses `{"path": ["example.area", null]}`. This is
 different from selecting the string `"null"`.
 
 `has_next` indicates whether selecting a returned value leads to another
-level. Values are unique within the response and returned in a stable order.
+level. When the next level has the same identity for every returned value,
+servers may include `next_level` with its `id` and human-readable
+`display_name`. Clients can use that name to label a pending selector before
+its values are fetched. `next_level` is omitted when `has_next` is `false` or
+the next level depends on the selected value. Clients must continue to use
+`has_next` to determine whether another level exists. Values are unique within
+the response and returned in a stable order.
 Discovery and filtered view listing must honor the caller's access. An unknown
 selection returns `404`; a request beyond the final level returns
 `400`. Servers that do not offer a
