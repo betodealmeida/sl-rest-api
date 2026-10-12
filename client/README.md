@@ -66,7 +66,7 @@ with engine.connect() as c:
 
 OAuth2 access tokens can be passed in the URL as `?access_token=...`.
 
-## Browsing cubes in Superset
+## Browsing semantic views in Superset
 
 The two levels returned by `POST /views/discover/` become Superset
 catalogs and schemas. For example,

@@ -127,6 +127,8 @@ Superset has the concept of [features](https://github.com/apache/superset/blob/9
 
 `GROUP_LIMIT` is a feature that allows specifying separate filter constraints for the group limit subquery. This is useful when you want to determine the top N groups using different criteria (e.g., a different time range) than the main query. For example, you might want to find the top 10 products by sales over the last 30 days, but then show daily sales for those products over the last 7 days. `GROUP_OTHERS` is an additional feature that allows the remaining categories to be grouped together in an "others" bucket. Since the implementation of these features is not trivial, they are considered optional.
 
+For `group_limit.filters`, an omitted field or `null` inherits the outer query's `filters`. An empty list ranks without filters. A nonempty list replaces the outer filters for ranking; the outer query still uses its own filters.
+
 (`ADHOC_EXPRESSIONS_IN_ORDERBY` should be self-explanatory.)
 
 ### `POST /views/discover/`
@@ -549,6 +551,8 @@ Request mirrors `SemanticQuery`, identifying metrics and dimensions by stable id
     }
 }
 ```
+
+In this example, `group_limit.filters: []` ranks product categories across all regions while the outer query returns only rows from the North region. Omit `group_limit.filters` or set it to `null` to rank within North instead.
 
 Filter `column` is an id; if `type` is `HAVING` it references a metric, if `WHERE` it references a dimension. `value` is a literal, a list (for `IN` / `NOT IN`), or `null` (for `IS NULL` / `IS NOT NULL`).
 
