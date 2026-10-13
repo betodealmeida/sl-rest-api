@@ -26,6 +26,8 @@ absence marks the final level. A semantic layer can fix any leading selections.
 When adding a semantic view, those selections are locked and the remaining
 levels can be selected. The extension verifies the fixed path again when a
 saved semantic view is used.
+The API must also support path-filtered `POST /views/`; the extension does not
+use the older `/views/list` route.
 
 The OAuth redirect URI is:
 

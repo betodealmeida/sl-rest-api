@@ -120,7 +120,7 @@ def _add_discovery_fields(
     first_dependencies: list[str],
     *,
     require_selection: bool,
-) -> bool:
+) -> None:
     """Add each known level and a placeholder for the next unknown level."""
     properties = schema["properties"]
     order = schema["x-propertyOrder"]
@@ -128,10 +128,6 @@ def _add_discovery_fields(
     path: list[str | None] = []
     while True:
         discovery = client.discover(path)
-        if discovery is None:
-            if selected_path:
-                raise APIClientError("The API does not support fixed discovery paths.")
-            return False
         index = len(path)
         field = _hierarchy_field(index)
         values = discovery["values"]
@@ -177,7 +173,6 @@ def _add_discovery_fields(
             if len(selected_path) > len(path):
                 raise APIClientError("The hierarchy path exceeds the final level.")
             break
-    return True
 
 
 def _effective_path(
@@ -257,7 +252,7 @@ class APISemanticLayer(SemanticLayer[APIConfiguration, APISemanticView]):
         if configuration and _can_discover(configuration):
             try:
                 client = APIClient(configuration)
-                discovered = _add_discovery_fields(
+                _add_discovery_fields(
                     schema,
                     client,
                     configuration.fixed_path,
@@ -265,10 +260,6 @@ class APISemanticLayer(SemanticLayer[APIConfiguration, APISemanticView]):
                     dependencies,
                     require_selection=False,
                 )
-                if not discovered:
-                    # A missing discovery route is a legacy API only if view
-                    # listing is available at the same configured base URL.
-                    client.list_views()
             except (APIClientError, SemanticLayerAuthenticationRequiredError):
                 for key in list(properties):
                     if key.startswith(HIERARCHY_FIELD_PREFIX):
@@ -369,12 +360,9 @@ class APISemanticLayer(SemanticLayer[APIConfiguration, APISemanticView]):
     ) -> set[APISemanticView]:
         path, additional = _effective_path(self.configuration, runtime_configuration)
         client = APIClient(self.configuration, additional)
-        discovery = client.discover([])
-        if discovery is None and self.configuration.fixed_path:
-            raise APIClientError("The API does not support fixed discovery paths.")
         return {
             APISemanticView(str(summary["name"]), client, summary)
-            for summary in client.list_views(path if discovery is not None else None)
+            for summary in client.list_views(path)
             if summary.get("name")
         }
 

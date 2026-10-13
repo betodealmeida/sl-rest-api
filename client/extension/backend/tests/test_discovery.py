@@ -65,7 +65,7 @@ class FakeClient:
             }
         raise AssertionError(f"Unexpected discovery path: {path}")
 
-    def list_views(self, path=None):
+    def list_views(self, path):
         assert path == ["demo.metrics", "main"]
         return [{"name": "demo.metrics.main.download_session"}]
 
@@ -165,3 +165,48 @@ def test_client_accepts_nonterminal_and_terminal_responses(monkeypatch) -> None:
     client = APIClient(configuration())
     assert client.discover([])["next_level"]["display_name"] == "Branch"
     assert "next_level" not in client.discover(["demo.metrics"])
+
+
+def test_missing_discovery_route_does_not_fall_back(monkeypatch) -> None:
+    paths = []
+
+    def post(url, **kwargs):
+        paths.append(url)
+        result = response({"detail": "Not found"})
+        result.status_code = 404
+        return result
+
+    monkeypatch.setattr(requests, "post", post)
+    with pytest.raises(APIClientError, match="Not found"):
+        APIClient(configuration()).discover([])
+    assert paths == ["https://dj.example.test/semantic/views/discover/"]
+
+    schema = APISemanticLayer.get_configuration_schema(configuration())
+    assert schema["properties"]["hierarchy_0"]["readOnly"] is True
+    assert paths == [
+        "https://dj.example.test/semantic/views/discover/",
+        "https://dj.example.test/semantic/views/discover/",
+    ]
+
+
+def test_view_listing_always_uses_filtered_endpoint(monkeypatch) -> None:
+    calls = []
+
+    def post(url, **kwargs):
+        calls.append((url, kwargs["json"]))
+        return response([])
+
+    monkeypatch.setattr(requests, "post", post)
+    client = APIClient(configuration())
+    assert client.list_views([]) == []
+    assert client.list_views(["demo.metrics", None]) == []
+    assert calls == [
+        (
+            "https://dj.example.test/semantic/views/",
+            {"runtime_configuration": {}, "path": []},
+        ),
+        (
+            "https://dj.example.test/semantic/views/",
+            {"runtime_configuration": {}, "path": ["demo.metrics", None]},
+        ),
+    ]
