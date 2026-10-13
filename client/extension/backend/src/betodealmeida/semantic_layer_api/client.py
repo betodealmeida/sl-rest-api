@@ -36,6 +36,10 @@ _REDIRECT_STATUSES = {301, 302, 303, 307, 308}
 class APIClientError(RuntimeError):
     """Raised when the service returns a non-authentication API error."""
 
+    def __init__(self, message: str, status_code: int | None = None) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+
 
 class APIClient:
     """Small protocol client bound to one configuration and Superset user."""
@@ -50,12 +54,58 @@ class APIClient:
         if additional_configuration:
             self.additional_configuration.update(additional_configuration)
 
-    def list_views(self) -> list[dict[str, Any]]:
+    def discover(self, path: list[str | None]) -> dict[str, Any] | None:
+        """Discover the next level, or return None for a legacy API."""
+        try:
+            payload = self._post(
+                "/views/discover/",
+                {"runtime_configuration": self.additional_configuration, "path": path},
+            )
+        except APIClientError as ex:
+            if not path and ex.status_code == 404:
+                return None
+            raise
+        if (
+            not isinstance(payload, Mapping)
+            or not isinstance(payload.get("level"), Mapping)
+            or not isinstance(payload["level"].get("id"), str)
+            or not payload["level"]["id"]
+            or not isinstance(payload["level"].get("display_name"), str)
+            or not payload["level"]["display_name"]
+            or "has_next" in payload
+            or not isinstance(payload.get("values"), list)
+            or any(
+                value is not None and (not isinstance(value, str) or not value)
+                for value in payload["values"]
+            )
+            or (
+                "next_level" in payload
+                and (
+                    not isinstance(payload["next_level"], Mapping)
+                    or not isinstance(payload["next_level"].get("id"), str)
+                    or not payload["next_level"]["id"]
+                    or not isinstance(
+                        payload["next_level"].get("display_name"), str
+                    )
+                    or not payload["next_level"]["display_name"]
+                )
+            )
+        ):
+            raise APIClientError("The API returned invalid discovery metadata.")
+        return dict(payload)
+
+    def list_views(
+        self,
+        path: list[str | None] | None = None,
+    ) -> list[dict[str, Any]]:
         """Return lightweight semantic-view summaries."""
         payload = self._post(
-            "/views/list",
-            {"runtime_configuration": self.additional_configuration},
-            missing_is_auth=True,
+            "/views/" if path is not None else "/views/list",
+            {
+                "runtime_configuration": self.additional_configuration,
+                **({"path": path} if path is not None else {}),
+            },
+            missing_is_auth=path is None,
         )
         if not isinstance(payload, list):
             raise APIClientError("The API returned an invalid view list.")
@@ -133,7 +183,13 @@ class APIClient:
         *,
         missing_is_auth: bool = False,
     ) -> Any:
-        token = get_access_token(self.configuration)
+        if self.configuration.auth_type == "access_token":
+            secret = self.configuration.access_token
+            if secret is None:
+                raise APIClientError("An access token is required.")
+            token = secret.get_secret_value()
+        else:
+            token = get_access_token(self.configuration)
         try:
             response = requests.post(
                 f"{self.configuration.api_url}{path}",
@@ -146,19 +202,25 @@ class APIClient:
             raise APIClientError("Unable to reach the Semantic Layer API.") from ex
 
         if response.status_code == 401 or response.status_code in _REDIRECT_STATUSES:
-            discard_token(self.configuration)
-            raise SemanticLayerAuthenticationRequiredError(
-                ACTION_ID,
-                "Semantic Layer API authentication is required.",
-            )
+            if self.configuration.auth_type == "oauth2":
+                discard_token(self.configuration)
+                raise SemanticLayerAuthenticationRequiredError(
+                    ACTION_ID,
+                    "Semantic Layer API authentication is required.",
+                )
+            raise APIClientError("The Semantic Layer API rejected the access token.")
         if response.status_code == 404 and missing_is_auth:
-            discard_token(self.configuration)
-            raise SemanticLayerAuthenticationRequiredError(
-                ACTION_ID,
-                "Semantic Layer API authentication is required.",
-            )
+            if self.configuration.auth_type == "oauth2":
+                discard_token(self.configuration)
+                raise SemanticLayerAuthenticationRequiredError(
+                    ACTION_ID,
+                    "Semantic Layer API authentication is required.",
+                )
         if response.status_code == 404:
-            raise APIClientError(_response_detail(response, "Semantic view not found."))
+            raise APIClientError(
+                _response_detail(response, "Semantic view not found."),
+                status_code=404,
+            )
         try:
             response.raise_for_status()
             return response.json()
