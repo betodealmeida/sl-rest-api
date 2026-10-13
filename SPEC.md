@@ -93,7 +93,7 @@ Request:
 
 An optional `path` filters the list to views at or below a selected location in
 the discovery hierarchy. Each array element is an opaque value returned by
-`POST /views/discover/`; clients must not split values on punctuation. The JSON
+`POST /discover`; clients must not split values on punctuation. The JSON
 value `null` is distinct from every string, including `"null"`, and represents
 an absent value at that level. An absent or empty path lists all views, a
 partial path lists descendants, and a path
@@ -131,7 +131,7 @@ For `group_limit.filters`, an omitted field or `null` inherits the outer query's
 
 (`ADHOC_EXPRESSIONS_IN_ORDERBY` should be self-explanatory.)
 
-### `POST /views/discover/`
+### `POST /discover`
 
 Returns the available values at the next level of the view discovery
 hierarchy. The request contains the values selected at preceding levels,

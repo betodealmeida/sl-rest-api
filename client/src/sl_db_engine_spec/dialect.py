@@ -273,7 +273,7 @@ class SemanticAPIDialect(APSWDialect):
 
     def _discover(self, path: list[str | None]) -> dict[str, Any]:
         response = self._post(
-            "/views/discover/",
+            "/discover",
             {"runtime_configuration": self._configuration, "path": path},
         )
         self._check_response(response)
