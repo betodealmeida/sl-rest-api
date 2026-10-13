@@ -35,7 +35,7 @@ The connection form asks for:
 If you'd rather skip the form, the equivalent SQLAlchemy URL is:
 
 ```
-semanticapi://<host>[:port]/?secure=<true|false>&additional_configuration=<urlencoded JSON>
+semanticapi://<host>[:port]/?encryption=<true|false>&additional_configuration=<urlencoded JSON>
 ```
 
 ## Standalone use (no Superset)
@@ -65,3 +65,29 @@ with engine.connect() as c:
 ```
 
 OAuth2 access tokens can be passed in the URL as `?access_token=...`.
+
+## Browsing semantic views in Superset
+
+The two levels returned by `POST /views/discover/` become Superset
+catalogs and schemas. For example,
+`demo.metrics.main.download_session` appears under catalog `demo%2Emetrics`
+and schema `main` when the server places it at path `["demo.metrics", "main"]`.
+Dots and other reserved characters are percent-encoded in
+the selector labels so Superset's catalog and schema permission parser keeps
+each label as one component. Superset still stores and queries the full view
+name as the table name.
+
+The client sends selected values unchanged in the JSON `path` when listing
+views. It requires exactly two discovery levels and uses their positions,
+regardless of their names. Browsing schemas requires selecting a catalog.
+
+When the second discovery value is JSON `null`, Superset displays the schema
+`unversioned` and sends `null` back in filtered view requests. A real string
+value `"unversioned"` displays as `~unversioned`; real values beginning with
+`~` have that prefix doubled, keeping every schema label distinct.
+
+The selected catalog and schema narrow the discovered tables and the adapter's
+registered tables for that connection. To browse multiple catalogs in Superset,
+enable **Allow changing catalogs** for the database. After upgrading an existing
+database connection, sync its permissions and grant access to the new catalog
+and schema permissions; old `main` schema permissions do not cover them.

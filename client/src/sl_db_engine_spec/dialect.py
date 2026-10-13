@@ -26,6 +26,7 @@ from __future__ import annotations
 import hashlib
 import json
 from typing import Any, ClassVar, cast
+from urllib.parse import quote, unquote
 
 import requests
 import sqlalchemy.types
@@ -46,6 +47,28 @@ from sl_db_engine_spec.adapter import SemanticAPI
 
 _TRUTHY = {"1", "true", "yes", "on"}
 _DEFAULT_TIMEOUT = 60.0
+
+
+def encode_namespace_label(value: str) -> str:
+    """Encode a catalog or schema for Superset's dot-delimited permissions."""
+    # urllib.quote always leaves ASCII dots unescaped, even with safe="".
+    # Encode them explicitly so a multi-part Git root remains one component.
+    return quote(value, safe="").replace(".", "%2E")
+
+
+def encode_schema_label(value: str | None) -> str:
+    """Give an absent level a distinct Superset label from every string value."""
+    if value is None:
+        return "unversioned"
+    label = encode_namespace_label(value)
+    return f"~{label}" if label == "unversioned" or label.startswith("~") else label
+
+
+def decode_schema_label(label: str) -> str | None:
+    """Recover the JSON discovery value from its Superset schema label."""
+    if label == "unversioned":
+        return None
+    return unquote(label[1:] if label.startswith("~") else label)
 
 
 def get_sqla_type(field: Field) -> type[TypeEngine]:
@@ -70,10 +93,10 @@ class TableSemanticAPI(SemanticAPI):
     """
     Base class for per-server SemanticAPI adapter subclasses.
 
-    Each ``(server URL, additional_configuration)`` pair gets its own
-    dynamically generated subclass — see :func:`adapter_class` — so the set
-    of discovered table names is isolated per tenant. The base class is never
-    registered directly.
+    Each server, configuration, token, catalog, and schema selection gets its
+    own dynamically generated subclass — see :func:`adapter_class` — so the
+    set of accessible table names is isolated per connection scope. The base
+    class is never registered directly.
     """
 
     table_names: ClassVar[set[str]] = set()
@@ -110,17 +133,19 @@ def adapter_class(
     base_url: str,
     configuration: dict[str, Any],
     access_token: str | None = None,
+    catalog: str | None = None,
+    schema: str | None = None,
 ) -> tuple[str, type[TableSemanticAPI]]:
     """
-    Return ``(registry name, adapter class)`` for one ``(server, config, token)``.
+    Return an adapter class scoped to one connection's view namespace.
 
     Subclasses are cached so repeat connections from the same tenant reuse a
     single class — different tenants get their own. The access token is part
     of the key so that two tenants pointing at the same server with different
-    bearer tokens can't see each other's ``table_names``.
+    bearer tokens, catalogs, or schemas can't see each other's ``table_names``.
     """
     fingerprint = json.dumps(
-        [base_url, configuration, access_token],
+        [base_url, configuration, access_token, catalog, schema],
         sort_keys=True,
     ).encode()
     digest = hashlib.blake2b(fingerprint, digest_size=8).hexdigest()
@@ -177,6 +202,10 @@ class SemanticAPIDialect(APSWDialect):
         self._access_token: str | None = None
         self._adapter_name: str = ""
         self._adapter_cls: type[TableSemanticAPI] | None = None
+        self._catalog: str | None = None
+        self._schema: str | None = None
+        self._views: list[str] = []
+        self._view_locations: dict[str, tuple[str, str]] = {}
 
     def create_connect_args(self, url: URL) -> tuple[tuple[()], dict[str, Any]]:
         encryption = str(url.query.get("encryption", "")).lower() in _TRUTHY
@@ -190,14 +219,18 @@ class SemanticAPIDialect(APSWDialect):
             self._configuration = json.loads(raw)
 
         self._access_token = url.query.get("access_token") or None
+        self._catalog = url.query.get("pseudo_catalog") or None
+        self._schema = url.query.get("pseudo_schema") or None
 
         self._adapter_name, self._adapter_cls = adapter_class(
             self._base_url,
             self._configuration,
             self._access_token,
+            self._catalog,
+            self._schema,
         )
         # populate the known-table set so ``supports`` works on first SQL call
-        self._adapter_cls.table_names = set(self._list_views())
+        self._refresh_views()
         if self._adapter_name not in registry.loaders:
             registry.add(self._adapter_name, self._adapter_cls)
 
@@ -212,22 +245,24 @@ class SemanticAPIDialect(APSWDialect):
             },
         )
 
-    def _list_views(self) -> list[str]:
+    def _post(self, endpoint: str, body: dict[str, Any]) -> requests.Response:
         headers: dict[str, str] = {}
         if self._access_token:
             headers["Authorization"] = f"Bearer {self._access_token}"
         response = requests.post(
-            f"{self._base_url}/views/list",
-            json={"runtime_configuration": self._configuration},
+            f"{self._base_url}{endpoint}",
+            json=body,
             headers=headers,
             timeout=_DEFAULT_TIMEOUT,
         )
+        return response
+
+    @staticmethod
+    def _check_response(response: requests.Response) -> None:
         # Surface as the canonical shillelagh exception so the Superset engine
         # spec's ``needs_oauth2`` recognises it and starts the dance. Some
-        # servers (e.g. Quiver) don't return 401 for unauthenticated requests
-        # to this endpoint, only 404, so both are treated as an auth failure.
-        # Some tests also showed a 307 being returned.
-        if response.status_code in (307, 401, 404):
+        # servers return a 307 redirect for unauthenticated requests.
+        if response.status_code in (307, 401):
             detail = "Authentication required."
             try:
                 detail = response.json().get("detail", detail)
@@ -235,7 +270,68 @@ class SemanticAPIDialect(APSWDialect):
                 pass
             raise UnauthenticatedError(detail)
         response.raise_for_status()
-        return sorted(view["name"] for view in response.json())
+
+    def _discover(self, path: list[str | None]) -> dict[str, Any]:
+        response = self._post(
+            "/views/discover/",
+            {"runtime_configuration": self._configuration, "path": path},
+        )
+        self._check_response(response)
+        result = response.json()
+        if (
+            not isinstance(result, dict)
+            or not isinstance(result.get("values"), list)
+            or any(
+                value is not None and (not isinstance(value, str) or not value)
+                for value in result["values"]
+            )
+            or (not path and None in result["values"])
+        ):
+            raise ValueError("Invalid semantic view discovery response")
+        next_level = result.get("next_level")
+        if path and "next_level" in result:
+            raise ValueError("The Semantic Layer API must expose exactly two levels")
+        if not path and (
+            not isinstance(next_level, dict)
+            or not isinstance(next_level.get("id"), str)
+            or not next_level["id"]
+            or not isinstance(next_level.get("display_name"), str)
+            or not next_level["display_name"]
+        ):
+            raise ValueError("The Semantic Layer API must expose exactly two levels")
+        return result
+
+    def _list_views(
+        self,
+        path: list[str | None],
+    ) -> tuple[list[str], dict[str, tuple[str, str]]]:
+        response = self._post(
+            "/views/", {"runtime_configuration": self._configuration, "path": path}
+        )
+        self._check_response(response)
+        entries = response.json()
+        names = sorted(view["name"] for view in entries)
+        locations: dict[str, tuple[str, str]] = {}
+        if len(path) == 2:
+            location = (
+                encode_namespace_label(cast(str, path[0])),
+                encode_schema_label(path[1]),
+            )
+            locations = {name: location for name in names}
+        return names, locations
+
+    def _refresh_views(self) -> None:
+        path: list[str | None] = []
+        if self._catalog:
+            path.append(unquote(self._catalog))
+            if self._schema:
+                path.append(decode_schema_label(self._schema))
+        self._views, self._view_locations = self._list_views(path)
+        if self._adapter_cls is not None:
+            self._adapter_cls.table_names = set(self._views)
+
+    def get_catalog_names(self, connection: Connection | None = None) -> list[str]:
+        return [encode_namespace_label(value) for value in self._discover([])["values"]]
 
     def get_table_names(
         self,
@@ -244,10 +340,29 @@ class SemanticAPIDialect(APSWDialect):
         sqlite_include_internal: bool = False,
         **kwargs: Any,
     ) -> list[str]:
-        views = self._list_views()
-        if self._adapter_cls is not None:
-            self._adapter_cls.table_names = set(views)
-        return views
+        if self._catalog and schema:
+            if self._schema and schema != self._schema:
+                return []
+            path = [unquote(self._catalog), decode_schema_label(schema)]
+            self._views, self._view_locations = self._list_views(path)
+            if self._adapter_cls is not None:
+                self._adapter_cls.table_names.update(self._views)
+            return self._views
+        if schema is not None:
+            return []
+        self._refresh_views()
+        return self._views
+
+    def get_view_names(
+        self,
+        connection: Connection,
+        schema: str | None = None,
+        **kwargs: Any,
+    ) -> list[str]:
+        # Semantic views are exposed as virtual tables. SQLite's inherited
+        # implementation queries <schema>.sqlite_master, but pseudo-schemas
+        # are not attached SQLite databases.
+        return []
 
     def has_table(
         self,
@@ -256,8 +371,17 @@ class SemanticAPIDialect(APSWDialect):
         schema: str | None = None,
         **kwargs: Any,
     ) -> bool:
+        if schema is not None and self._catalog:
+            if self._schema and schema != self._schema:
+                return False
+            location = self._view_locations.get(table_name)
+            if location is None or location[1] != schema:
+                self.get_table_names(connection, schema=schema)
+                location = self._view_locations.get(table_name)
+            return location is not None and location[1] == schema
         return (
-            self._adapter_cls is not None
+            schema is None
+            and self._adapter_cls is not None
             and table_name in self._adapter_cls.table_names
         )
 
@@ -296,7 +420,10 @@ class SemanticAPIDialect(APSWDialect):
         connection: Connection,
         **kwargs: Any,
     ) -> list[str]:
-        return ["main"]
+        if not self._catalog:
+            return []
+        result = self._discover([unquote(self._catalog)])
+        return [encode_schema_label(value) for value in result["values"]]
 
     def get_pk_constraint(
         self,

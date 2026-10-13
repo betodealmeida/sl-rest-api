@@ -44,3 +44,52 @@ def test_d3format_omits_unknown_or_invalid_format() -> None:
     assert d3format_from_metadata({"format": {"preset": "number", "precision": -1}}) == (
         ",.2f"
     )
+
+
+def test_pseudo_catalog_engine_spec() -> None:
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    import pytest
+    from sqlalchemy.dialects.sqlite import dialect
+    from sqlalchemy.engine.url import make_url
+
+    pytest.importorskip("superset")
+    from sl_db_engine_spec.engine_spec import SemanticAPIEngineSpec
+
+    spec = SemanticAPIEngineSpec
+    assert spec.supports_catalog
+    assert spec.supports_dynamic_catalog
+    assert spec.supports_dynamic_schema
+    assert not spec.quote_table_includes_schema
+
+    url, _ = spec.adjust_engine_params(
+        make_url("semanticapi://example.test"),
+        {},
+        catalog="demo%2Emetrics",
+        schema="main",
+    )
+    assert url.query["pseudo_catalog"] == "demo%2Emetrics"
+    assert url.query["pseudo_schema"] == "main"
+    table = SimpleNamespace(
+        table="demo.metrics.main.download_session",
+        schema="main",
+        catalog="demo%2Emetrics",
+    )
+    assert spec.quote_table(table, dialect()) == (
+        '"demo.metrics.main.download_session"'
+    )
+
+    database = Mock()
+    database.get_all_catalog_names.return_value = {"shared", "demo%2Emetrics"}
+    database.get_all_schema_names.return_value = {"main", "test"}
+    assert spec.get_default_catalog(database) == "demo%2Emetrics"
+    assert spec.get_default_schema(database, "demo%2Emetrics") == "main"
+    database.get_all_schema_names.assert_called_with(catalog="demo%2Emetrics")
+
+    inspector = Mock()
+    inspector.get_table_names.return_value = ["demo.metrics.main.download_session"]
+    assert spec.get_table_names(database, inspector, "main") == {
+        "demo.metrics.main.download_session"
+    }
+    inspector.get_table_names.assert_called_once_with(schema="main")
