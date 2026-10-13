@@ -78,9 +78,8 @@ each label as one component. Superset still stores and queries the full view
 name as the table name.
 
 The client sends selected values unchanged in the JSON `path` when listing
-views. It requires exactly two discovery levels. For older servers without
-`/views/discover/`, it still reads `namespace` and `branch` fields from view
-summaries, or groups views by the first two parts of their names.
+views. It requires exactly two discovery levels and uses their positions,
+regardless of their names. Browsing schemas requires selecting a catalog.
 
 When the second discovery value is JSON `null`, Superset displays the schema
 `unversioned` and sends `null` back in filtered view requests. A real string
