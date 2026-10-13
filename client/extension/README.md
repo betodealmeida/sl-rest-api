@@ -20,7 +20,7 @@ tied to a semantic-layer UUID and are never exposed to browser code.
   are derived as `<api_url>/authorize` and `<api_url>/token`.
 - `scope`: optional OAuth2 scope string.
 
-After authentication, the extension calls `POST /views/discover/` to populate
+After authentication, the extension calls `POST /discover` to populate
 hierarchy selectors. A response's `next_level` names the next selector; its
 absence marks the final level. A semantic layer can fix any leading selections.
 When adding a semantic view, those selections are locked and the remaining

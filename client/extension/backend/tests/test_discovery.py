@@ -179,13 +179,13 @@ def test_missing_discovery_route_does_not_fall_back(monkeypatch) -> None:
     monkeypatch.setattr(requests, "post", post)
     with pytest.raises(APIClientError, match="Not found"):
         APIClient(configuration()).discover([])
-    assert paths == ["https://dj.example.test/semantic/views/discover/"]
+    assert paths == ["https://dj.example.test/semantic/discover"]
 
     schema = APISemanticLayer.get_configuration_schema(configuration())
     assert schema["properties"]["hierarchy_0"]["readOnly"] is True
     assert paths == [
-        "https://dj.example.test/semantic/views/discover/",
-        "https://dj.example.test/semantic/views/discover/",
+        "https://dj.example.test/semantic/discover",
+        "https://dj.example.test/semantic/discover",
     ]
 
 

@@ -57,7 +57,7 @@ class APIClient:
     def discover(self, path: list[str | None]) -> dict[str, Any]:
         """Discover the next level of the view hierarchy."""
         payload = self._post(
-            "/views/discover/",
+            "/discover",
             {"runtime_configuration": self.additional_configuration, "path": path},
         )
         if (
