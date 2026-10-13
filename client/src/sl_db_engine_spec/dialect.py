@@ -314,9 +314,16 @@ class SemanticAPIDialect(APSWDialect):
             or (not path and None in result["values"])
         ):
             raise ValueError("Invalid semantic view discovery response")
-        if path and result.get("has_next") is not False:
+        next_level = result.get("next_level")
+        if path and "next_level" in result:
             raise ValueError("The Semantic Layer API must expose exactly two levels")
-        if not path and result.get("has_next") is not True:
+        if not path and (
+            not isinstance(next_level, dict)
+            or not isinstance(next_level.get("id"), str)
+            or not next_level["id"]
+            or not isinstance(next_level.get("display_name"), str)
+            or not next_level["display_name"]
+        ):
             raise ValueError("The Semantic Layer API must expose exactly two levels")
         self._discovery_supported = True
         return result

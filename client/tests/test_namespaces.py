@@ -2,11 +2,13 @@
 
 from unittest.mock import Mock, patch
 
+import pytest
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.dialects import registry as dialect_registry
 from sqlalchemy.engine.url import URL
 
 from sl_db_engine_spec.dialect import (
+    SemanticAPIDialect,
     decode_schema_label,
     encode_namespace_label,
     encode_schema_label,
@@ -68,7 +70,7 @@ def test_generic_discovery_and_filtered_view_listing() -> None:
                     {
                         "level": {"id": "namespace", "display_name": "Namespace"},
                         "values": ["demo.metrics", "shared", "system.dj"],
-                        "has_next": True,
+                        "next_level": {"id": "branch", "display_name": "Branch"},
                     }
                 )
             if body["path"] == ["demo.metrics"]:
@@ -76,7 +78,6 @@ def test_generic_discovery_and_filtered_view_listing() -> None:
                     {
                         "level": {"id": "branch", "display_name": "Branch"},
                         "values": ["main", "feature/foo.bar", "unversioned"],
-                        "has_next": False,
                     }
                 )
             if body["path"] == ["system.dj"]:
@@ -84,7 +85,6 @@ def test_generic_discovery_and_filtered_view_listing() -> None:
                     {
                         "level": {"id": "branch", "display_name": "Branch"},
                         "values": [None],
-                        "has_next": False,
                     }
                 )
         if url.endswith("/views/"):
@@ -160,6 +160,35 @@ def test_generic_discovery_and_filtered_view_listing() -> None:
         for url, body in requests
         if url.endswith("/views/")
     )
+
+
+@pytest.mark.parametrize(
+    "path,payload",
+    [
+        (
+            [],
+            {
+                "level": {"id": "namespace", "display_name": "Namespace"},
+                "values": ["demo.metrics"],
+                "has_next": True,
+            },
+        ),
+        (
+            ["demo.metrics"],
+            {
+                "level": {"id": "branch", "display_name": "Branch"},
+                "values": ["main"],
+                "next_level": None,
+            },
+        ),
+    ],
+)
+def test_discovery_requires_next_level_presence_to_match_depth(path, payload) -> None:
+    dialect = SemanticAPIDialect()
+    dialect._configuration = {}
+    with patch.object(dialect, "_post", return_value=response(payload)):
+        with pytest.raises(ValueError, match="exactly two levels"):
+            dialect._discover(path)
 
 
 def test_explicit_namespace_and_branch_control_discovery() -> None:
