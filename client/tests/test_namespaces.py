@@ -47,7 +47,7 @@ def test_discovery_uses_position_and_filtered_listing_for_sql() -> None:
     def post(url, **kwargs):
         body = kwargs["json"]
         requests_made.append((url, body))
-        if url.endswith("/views/discover/"):
+        if url.endswith("/discover"):
             if body["path"] == []:
                 return response(
                     {

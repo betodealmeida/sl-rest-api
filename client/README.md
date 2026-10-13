@@ -68,7 +68,7 @@ OAuth2 access tokens can be passed in the URL as `?access_token=...`.
 
 ## Browsing semantic views in Superset
 
-The two levels returned by `POST /views/discover/` become Superset
+The two levels returned by `POST /discover` become Superset
 catalogs and schemas. For example,
 `demo.metrics.main.download_session` appears under catalog `demo%2Emetrics`
 and schema `main` when the server places it at path `["demo.metrics", "main"]`.
