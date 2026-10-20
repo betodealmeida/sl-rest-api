@@ -1,4 +1,4 @@
-"""HTTP route handlers — everything hangs off ``/views``."""
+"""HTTP route handlers for view discovery and queries."""
 
 from __future__ import annotations
 
@@ -10,8 +10,10 @@ from litestar.status_codes import HTTP_200_OK
 
 from semantic_api import registry
 from semantic_api.auth import require_bearer
+from semantic_api.discovery import discover, filter_views
 from semantic_api.schemas import (
     CompatibilityRequest,
+    DiscoverRequest,
     ListViewsRequest,
     QueryPayload,
     QueryRequest,
@@ -46,15 +48,30 @@ def _view_payload(view) -> dict[str, Any]:  # noqa: ANN001 - SemanticView
     }
 
 
+@post("/discover", status_code=HTTP_200_OK, guards=[require_bearer], tags=["views"])
+async def discover_views(data: DiscoverRequest) -> dict[str, Any]:
+    views = registry.layer().get_semantic_views(data.runtime_configuration)
+    return discover(views, data.path)
+
+
+def _list_views(data: ListViewsRequest) -> list[dict[str, Any]]:
+    views = registry.layer().get_semantic_views(data.runtime_configuration)
+    return [_view_summary_payload(view) for view in filter_views(views, data.path)]
+
+
+@post("/views", status_code=HTTP_200_OK, guards=[require_bearer], tags=["views"])
+async def list_views(data: ListViewsRequest) -> list[dict[str, Any]]:
+    return _list_views(data)
+
+
 class ViewsController(Controller):
     path = "/views"
     tags = ["views"]
     guards = [require_bearer]
 
-    @post(["/list", "/"], status_code=HTTP_200_OK)
-    async def list_views(self, data: ListViewsRequest) -> list[dict[str, Any]]:
-        views = registry.layer().get_semantic_views(data.runtime_configuration)
-        return [_view_summary_payload(view) for view in views]
+    @post("/list", status_code=HTTP_200_OK)
+    async def list_views_legacy(self, data: ListViewsRequest) -> list[dict[str, Any]]:
+        return _list_views(data)
 
     @post("/{view_name:str}", status_code=HTTP_200_OK)
     async def get_view(self, view_name: str, data: ViewRequest) -> dict[str, Any]:
