@@ -92,7 +92,7 @@ class APIClient:
     def list_views(self, path: list[str | None]) -> list[dict[str, Any]]:
         """Return lightweight semantic-view summaries."""
         payload = self._post(
-            "/views/",
+            "/views",
             {"runtime_configuration": self.additional_configuration, "path": path},
         )
         if not isinstance(payload, list):

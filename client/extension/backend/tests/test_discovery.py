@@ -202,11 +202,11 @@ def test_view_listing_always_uses_filtered_endpoint(monkeypatch) -> None:
     assert client.list_views(["demo.metrics", None]) == []
     assert calls == [
         (
-            "https://dj.example.test/semantic/views/",
+            "https://dj.example.test/semantic/views",
             {"runtime_configuration": {}, "path": []},
         ),
         (
-            "https://dj.example.test/semantic/views/",
+            "https://dj.example.test/semantic/views",
             {"runtime_configuration": {}, "path": ["demo.metrics", None]},
         ),
     ]
