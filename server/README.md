@@ -26,6 +26,35 @@ litestar --app semantic_api.app:app run
 
 OpenAPI docs are served at `/schema`. Swagger UI at `/schema/swagger`.
 
+## View discovery
+
+The sample views live at two different depths in a three-level hierarchy:
+
+| View | Group | Area | Variant |
+| --- | --- | --- | --- |
+| `marketing` | `foo` | `bar` | `null` |
+| `sales` | `foo` | `bar` | `baz` |
+
+The `null` value means that `marketing` has no variant. The view names remain
+`marketing` and `sales` in `/views/` and in query URLs; their discovery
+locations can change without changing those identifiers.
+
+Start at the root and send each returned value as the next path element:
+
+```bash
+curl localhost:8000/discover -H 'content-type: application/json' -d '{}'
+curl localhost:8000/discover -H 'content-type: application/json' -d '{"path":["foo"]}'
+curl localhost:8000/discover -H 'content-type: application/json' -d '{"path":["foo","bar"]}'
+```
+
+The final request returns `"values": ["baz", null]` with no `next_level`.
+Filter views using the selected path:
+
+```bash
+curl localhost:8000/views/ -H 'content-type: application/json' -d '{"path":["foo","bar",null]}'
+curl localhost:8000/views/ -H 'content-type: application/json' -d '{"path":["foo","bar","baz"]}'
+```
+
 ## Quick start
 
 ```bash
