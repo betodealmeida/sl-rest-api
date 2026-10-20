@@ -40,7 +40,7 @@ def test_list_views_filters_by_hierarchy(
 ) -> None:
     body = {} if path is None else {"path": path}
     with TestClient(create_app()) as client:
-        for endpoint in ("/views/", "/views/list"):
+        for endpoint in ("/views", "/views/list"):
             response = client.post(endpoint, json=body)
             assert response.status_code == 200
             assert {view["name"] for view in response.json()} == expected
@@ -51,10 +51,10 @@ def test_list_views_filters_by_hierarchy(
     [
         ("/discover", ["missing"], 404),
         ("/discover", ["foo", "bar", "baz"], 400),
-        ("/views/", ["foo", "missing"], 404),
-        ("/views/", ["foo", "bar", "missing"], 404),
-        ("/views/", ["foo", "bar", "null"], 404),
-        ("/views/", ["foo", "bar", "baz", "extra"], 400),
+        ("/views", ["foo", "missing"], 404),
+        ("/views", ["foo", "bar", "missing"], 404),
+        ("/views", ["foo", "bar", "null"], 404),
+        ("/views", ["foo", "bar", "baz", "extra"], 400),
     ],
 )
 def test_invalid_discovery_path(

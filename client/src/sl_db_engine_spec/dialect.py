@@ -306,7 +306,7 @@ class SemanticAPIDialect(APSWDialect):
         path: list[str | None],
     ) -> tuple[list[str], dict[str, tuple[str, str]]]:
         response = self._post(
-            "/views/", {"runtime_configuration": self._configuration, "path": path}
+            "/views", {"runtime_configuration": self._configuration, "path": path}
         )
         self._check_response(response)
         entries = response.json()

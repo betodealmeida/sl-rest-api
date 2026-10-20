@@ -54,15 +54,24 @@ async def discover_views(data: DiscoverRequest) -> dict[str, Any]:
     return discover(views, data.path)
 
 
+def _list_views(data: ListViewsRequest) -> list[dict[str, Any]]:
+    views = registry.layer().get_semantic_views(data.runtime_configuration)
+    return [_view_summary_payload(view) for view in filter_views(views, data.path)]
+
+
+@post("/views", status_code=HTTP_200_OK, guards=[require_bearer], tags=["views"])
+async def list_views(data: ListViewsRequest) -> list[dict[str, Any]]:
+    return _list_views(data)
+
+
 class ViewsController(Controller):
     path = "/views"
     tags = ["views"]
     guards = [require_bearer]
 
-    @post(["/list", "/"], status_code=HTTP_200_OK)
-    async def list_views(self, data: ListViewsRequest) -> list[dict[str, Any]]:
-        views = registry.layer().get_semantic_views(data.runtime_configuration)
-        return [_view_summary_payload(view) for view in filter_views(views, data.path)]
+    @post("/list", status_code=HTTP_200_OK)
+    async def list_views_legacy(self, data: ListViewsRequest) -> list[dict[str, Any]]:
+        return _list_views(data)
 
     @post("/{view_name:str}", status_code=HTTP_200_OK)
     async def get_view(self, view_name: str, data: ViewRequest) -> dict[str, Any]:

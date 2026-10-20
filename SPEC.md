@@ -81,7 +81,7 @@ Examples:
 
 ## Endpoints
 
-### `POST /views/` (`POST /views/list` supported but deprecated)
+### `POST /views` (`POST /views/list` supported but deprecated)
 
 Lists semantic views. `POST` is used because the runtime configuration is a free-form JSON object.
 
@@ -185,7 +185,7 @@ stable order.
 Discovery and filtered view listing must honor the caller's access. An unknown
 selection returns `404`; a request beyond the final level returns
 `400`. Servers that do not offer a
-discovery hierarchy may omit this endpoint; `POST /views/` remains available.
+discovery hierarchy may omit this endpoint; `POST /views` remains available.
 
 ### `POST /views/{view_name}`
 

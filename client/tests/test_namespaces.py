@@ -70,7 +70,7 @@ def test_discovery_uses_position_and_filtered_listing_for_sql() -> None:
                         "values": [None],
                     }
                 )
-        if url.endswith("/views/"):
+        if url.endswith("/views"):
             if body["path"] == ["demo.metrics", "main"]:
                 # DJ-specific fields must not override the selected path.
                 return response(
@@ -165,12 +165,12 @@ def test_discovery_uses_position_and_filtered_listing_for_sql() -> None:
     assert any(
         body.get("path") == ["demo.metrics", "main"]
         for url, body in requests_made
-        if url.endswith("/views/")
+        if url.endswith("/views")
     )
     assert any(
         body.get("path") == ["system.dj", None]
         for url, body in requests_made
-        if url.endswith("/views/")
+        if url.endswith("/views")
     )
 
 
