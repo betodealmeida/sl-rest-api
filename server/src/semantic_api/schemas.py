@@ -11,8 +11,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 from superset_core.semantic_layers.types import (
-    OrderDirection,
     Operator,
+    OrderDirection,
     PredicateType,
 )
 
@@ -24,11 +24,6 @@ class _Model(BaseModel):
 class ListViewsRequest(_Model):
     runtime_configuration: dict[str, Any] = Field(default_factory=dict)
     path: list[str | None] | None = None
-
-
-class DiscoverRequest(_Model):
-    runtime_configuration: dict[str, Any] = Field(default_factory=dict)
-    path: list[str | None] = Field(default_factory=list)
 
 
 class ViewRequest(_Model):

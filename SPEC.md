@@ -91,20 +91,15 @@ Request:
 {"runtime_configuration": {}}
 ```
 
-An optional `path` filters the list to views at or below a selected location in
-the discovery hierarchy. Each array element is an opaque value returned by
-`POST /discover`; clients must not split values on punctuation. The JSON
+An optional `path` selects a location in the discovery hierarchy. Each array
+element is an opaque value returned in the preceding response's
+`hierarchy.values`; clients must not split values on punctuation. The JSON
 value `null` is distinct from every string, including `"null"`, and represents
-an absent value at that level. An absent or empty path lists all views, a
-partial path lists descendants, and a path
-through the final level lists views at that location. An unknown selection
-returns `404`; a path beyond the final level returns `400`.
+an absent value at that level. An unknown selection returns `404`; a path
+beyond the final level returns `400`.
 
-```json
-{"runtime_configuration": {}, "path": ["example.area", "main"]}
-```
-
-Response:
+When `path` is omitted, the response remains an array of all matching views.
+This preserves existing clients, including clients using `/views/list`:
 
 ```json
 [
@@ -116,6 +111,33 @@ Response:
     }
 ]
 ```
+
+When `path` is present, including an empty array, the response describes the
+current location, its immediate child choices, and views at the current
+location:
+
+```json
+{"runtime_configuration": {}, "path": ["example.area"]}
+```
+
+```json
+{
+    "hierarchy": {
+        "current": {"id": "group", "display_name": "Group"},
+        "next": {"id": "version", "display_name": "Version"},
+        "values": ["main", "preview", null]
+    },
+    "views": [{"name": "sales", "uid": "pandas.sales", "features": []}]
+}
+```
+
+At `path: []`, `current` is `null`; at a terminal path, `next` is `null`
+and `values` is `[]`. Each non-null level has an `id` and `display_name`.
+`values` lists choices for `next`, in stable order, and can include JSON
+`null`. A view can exist at a partial path that also has child choices.
+Servers without a hierarchy return both levels as `null`, an empty `values`
+array, and their views at `path: []`. Both hierarchy choices and views must
+respect the caller's access.
 
 `name` is the stable identifier used in endpoint paths. The optional `display_name` is a human-readable label for presentation and may be a string or `null`. Clients should fall back to `name` when `display_name` is absent, `null`, or empty. Including it in this lightweight response lets clients render view pickers without fetching every view's full metadata.
 
@@ -130,62 +152,6 @@ Superset has the concept of [features](https://github.com/apache/superset/blob/9
 For `group_limit.filters`, an omitted field or `null` inherits the outer query's `filters`. An empty list ranks without filters. A nonempty list replaces the outer filters for ranking; the outer query still uses its own filters.
 
 (`ADHOC_EXPRESSIONS_IN_ORDERBY` should be self-explanatory.)
-
-### `POST /discover`
-
-Returns the available values at the next level of the view discovery
-hierarchy. The request contains the values selected at preceding levels,
-starting with an empty `path`. Servers define the level identifiers and
-display names; clients use the positions in `path`, not those identifiers, to
-select values. A value is an opaque, non-empty string or JSON `null` and is sent
-unchanged in subsequent requests. `null` represents an absent value at that
-level; it is a selectable value, not an omitted path element.
-
-Request for the first level:
-
-```json
-{"runtime_configuration": {}, "path": []}
-```
-
-Response:
-
-```json
-{
-    "level": {"id": "group", "display_name": "Group"},
-    "values": ["example.area", "shared"],
-    "next_level": {"id": "version", "display_name": "Version"}
-}
-```
-
-Request after selecting `example.area`:
-
-```json
-{"runtime_configuration": {}, "path": ["example.area"]}
-```
-
-Response:
-
-```json
-{
-    "level": {"id": "version", "display_name": "Version"},
-    "values": ["main", "preview", null]
-}
-```
-
-Selecting the absent value uses `{"path": ["example.area", null]}`. This is
-different from selecting the string `"null"`.
-
-`next_level` is present when selecting a returned value leads to another
-level, and contains that level's `id` and human-readable `display_name`.
-Servers omit `next_level` at the final level; `null` is not a valid value for
-this field. The next level must have the same identity for every value in a
-response. Clients can use its display name to label a pending selector before
-fetching its values. Values are unique within the response and returned in a
-stable order.
-Discovery and filtered view listing must honor the caller's access. An unknown
-selection returns `404`; a request beyond the final level returns
-`400`. Servers that do not offer a
-discovery hierarchy may omit this endpoint; `POST /views` remains available.
 
 ### `POST /views/{view_name}`
 

@@ -30,10 +30,6 @@ from urllib.parse import quote, unquote
 
 import requests
 import sqlalchemy.types
-from sqlalchemy.engine.base import Connection
-from sqlalchemy.engine.url import URL
-from sqlalchemy.sql.type_api import TypeEngine
-
 from shillelagh.adapters.registry import registry
 from shillelagh.backends.apsw.dialects.base import (
     APSWDialect,
@@ -42,6 +38,9 @@ from shillelagh.backends.apsw.dialects.base import (
 )
 from shillelagh.exceptions import UnauthenticatedError
 from shillelagh.fields import Field
+from sqlalchemy.engine.base import Connection
+from sqlalchemy.engine.url import URL
+from sqlalchemy.sql.type_api import TypeEngine
 
 from sl_db_engine_spec.adapter import SemanticAPI
 
@@ -271,27 +270,29 @@ class SemanticAPIDialect(APSWDialect):
             raise UnauthenticatedError(detail)
         response.raise_for_status()
 
-    def _discover(self, path: list[str | None]) -> dict[str, Any]:
+    def _browse(self, path: list[str | None]) -> dict[str, Any]:
         response = self._post(
-            "/discover",
+            "/views",
             {"runtime_configuration": self._configuration, "path": path},
         )
         self._check_response(response)
         result = response.json()
+        hierarchy = result.get("hierarchy") if isinstance(result, dict) else None
         if (
-            not isinstance(result, dict)
-            or not isinstance(result.get("values"), list)
+            not isinstance(hierarchy, dict)
+            or not isinstance(hierarchy.get("values"), list)
+            or not isinstance(result.get("views"), list)
             or any(
                 value is not None and (not isinstance(value, str) or not value)
-                for value in result["values"]
+                for value in hierarchy["values"]
             )
-            or (not path and None in result["values"])
+            or (not path and None in hierarchy["values"])
         ):
-            raise ValueError("Invalid semantic view discovery response")
-        next_level = result.get("next_level")
-        if path and "next_level" in result:
+            raise ValueError("Invalid semantic view browsing response")
+        next_level = hierarchy.get("next")
+        if path and len(path) == 2 and (next_level is not None or hierarchy["values"]):
             raise ValueError("The Semantic Layer API must expose exactly two levels")
-        if not path and (
+        if len(path) < 2 and (
             not isinstance(next_level, dict)
             or not isinstance(next_level.get("id"), str)
             or not next_level["id"]
@@ -305,11 +306,7 @@ class SemanticAPIDialect(APSWDialect):
         self,
         path: list[str | None],
     ) -> tuple[list[str], dict[str, tuple[str, str]]]:
-        response = self._post(
-            "/views", {"runtime_configuration": self._configuration, "path": path}
-        )
-        self._check_response(response)
-        entries = response.json()
+        entries = self._browse(path)["views"]
         names = sorted(view["name"] for view in entries)
         locations: dict[str, tuple[str, str]] = {}
         if len(path) == 2:
@@ -326,12 +323,32 @@ class SemanticAPIDialect(APSWDialect):
             path.append(unquote(self._catalog))
             if self._schema:
                 path.append(decode_schema_label(self._schema))
-        self._views, self._view_locations = self._list_views(path)
+        if not path:
+            response = self._post(
+                "/views", {"runtime_configuration": self._configuration}
+            )
+            self._check_response(response)
+            self._views = sorted(view["name"] for view in response.json())
+            self._view_locations = {}
+        elif len(path) == 1:
+            namespace = cast(str, path[0])
+            branches = self._browse(path)["hierarchy"]["values"]
+            locations: dict[str, tuple[str, str]] = {}
+            for branch in branches:
+                _, branch_locations = self._list_views([namespace, branch])
+                locations.update(branch_locations)
+            self._views = sorted(locations)
+            self._view_locations = locations
+        else:
+            self._views, self._view_locations = self._list_views(path)
         if self._adapter_cls is not None:
             self._adapter_cls.table_names = set(self._views)
 
     def get_catalog_names(self, connection: Connection | None = None) -> list[str]:
-        return [encode_namespace_label(value) for value in self._discover([])["values"]]
+        return [
+            encode_namespace_label(value)
+            for value in self._browse([])["hierarchy"]["values"]
+        ]
 
     def get_table_names(
         self,
@@ -422,8 +439,8 @@ class SemanticAPIDialect(APSWDialect):
     ) -> list[str]:
         if not self._catalog:
             return []
-        result = self._discover([unquote(self._catalog)])
-        return [encode_schema_label(value) for value in result["values"]]
+        result = self._browse([unquote(self._catalog)])
+        return [encode_schema_label(value) for value in result["hierarchy"]["values"]]
 
     def get_pk_constraint(
         self,

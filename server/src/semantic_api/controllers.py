@@ -10,10 +10,9 @@ from litestar.status_codes import HTTP_200_OK
 
 from semantic_api import registry
 from semantic_api.auth import require_bearer
-from semantic_api.discovery import discover, filter_views
+from semantic_api.discovery import browse
 from semantic_api.schemas import (
     CompatibilityRequest,
-    DiscoverRequest,
     ListViewsRequest,
     QueryPayload,
     QueryRequest,
@@ -48,19 +47,19 @@ def _view_payload(view) -> dict[str, Any]:  # noqa: ANN001 - SemanticView
     }
 
 
-@post("/discover", status_code=HTTP_200_OK, guards=[require_bearer], tags=["views"])
-async def discover_views(data: DiscoverRequest) -> dict[str, Any]:
+def _list_views(data: ListViewsRequest) -> list[dict[str, Any]] | dict[str, Any]:
     views = registry.layer().get_semantic_views(data.runtime_configuration)
-    return discover(views, data.path)
-
-
-def _list_views(data: ListViewsRequest) -> list[dict[str, Any]]:
-    views = registry.layer().get_semantic_views(data.runtime_configuration)
-    return [_view_summary_payload(view) for view in filter_views(views, data.path)]
+    if data.path is None:
+        return [_view_summary_payload(view) for view in views]
+    hierarchy, direct_views = browse(views, data.path)
+    return {
+        "hierarchy": hierarchy,
+        "views": [_view_summary_payload(view) for view in direct_views],
+    }
 
 
 @post("/views", status_code=HTTP_200_OK, guards=[require_bearer], tags=["views"])
-async def list_views(data: ListViewsRequest) -> list[dict[str, Any]]:
+async def list_views(data: ListViewsRequest) -> list[dict[str, Any]] | dict[str, Any]:
     return _list_views(data)
 
 
@@ -70,7 +69,9 @@ class ViewsController(Controller):
     guards = [require_bearer]
 
     @post("/list", status_code=HTTP_200_OK)
-    async def list_views_legacy(self, data: ListViewsRequest) -> list[dict[str, Any]]:
+    async def list_views_legacy(
+        self, data: ListViewsRequest
+    ) -> list[dict[str, Any]] | dict[str, Any]:
         return _list_views(data)
 
     @post("/{view_name:str}", status_code=HTTP_200_OK)
@@ -119,7 +120,9 @@ class ViewsController(Controller):
     ) -> list[dict[str, Any]]:
         view = fetch_view(view_name, data.additional_configuration)
         selected_metrics, selected_dimensions = _resolve_selection(view, data)
-        dimensions = view.get_compatible_dimensions(selected_metrics, selected_dimensions)
+        dimensions = view.get_compatible_dimensions(
+            selected_metrics, selected_dimensions
+        )
         return [dimension_to_payload(d) for d in dimensions]
 
 
@@ -128,5 +131,9 @@ def _resolve_selection(view, data: CompatibilityRequest):
     dimensions_by_id = {d.id: d for d in view.get_dimensions()}
     return (
         {metrics_by_id[m] for m in data.selected_metrics if m in metrics_by_id},
-        {dimensions_by_id[d] for d in data.selected_dimensions if d in dimensions_by_id},
+        {
+            dimensions_by_id[d]
+            for d in data.selected_dimensions
+            if d in dimensions_by_id
+        },
     )
