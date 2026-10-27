@@ -12,7 +12,7 @@ from litestar.plugins.problem_details import ProblemDetailsPlugin
 
 from semantic_api import registry
 from semantic_api.auth import AuthController
-from semantic_api.controllers import ViewsController, discover_views, list_views
+from semantic_api.controllers import ViewsController, list_views
 
 
 def _read_configuration() -> dict[str, Any]:
@@ -24,7 +24,7 @@ def create_app() -> Litestar:
     registry.configure(_read_configuration())
 
     return Litestar(
-        route_handlers=[AuthController, ViewsController, discover_views, list_views],
+        route_handlers=[AuthController, ViewsController, list_views],
         openapi_config=OpenAPIConfig(
             title="Semantic Layer API",
             version="0.1.0",

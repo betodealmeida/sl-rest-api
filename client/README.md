@@ -68,7 +68,7 @@ OAuth2 access tokens can be passed in the URL as `?access_token=...`.
 
 ## Browsing semantic views in Superset
 
-The two levels returned by `POST /discover` become Superset
+The first two hierarchy levels returned by path-based `POST /views` become Superset
 catalogs and schemas. For example,
 `demo.metrics.main.download_session` appears under catalog `demo%2Emetrics`
 and schema `main` when the server places it at path `["demo.metrics", "main"]`.
@@ -78,7 +78,7 @@ each label as one component. Superset still stores and queries the full view
 name as the table name.
 
 The client sends selected values unchanged in the JSON `path` when listing
-views. It requires exactly two discovery levels and uses their positions,
+views. It requires exactly two hierarchy levels and uses their positions,
 regardless of their names. Browsing schemas requires selecting a catalog.
 
 When the second discovery value is JSON `null`, Superset displays the schema

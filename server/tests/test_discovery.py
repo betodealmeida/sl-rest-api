@@ -2,72 +2,68 @@ from __future__ import annotations
 
 import pytest
 from litestar.testing import TestClient
-
 from semantic_api.app import create_app
 
 
-def test_discover_mixed_depth_hierarchy() -> None:
+def test_views_browse_mixed_depth_hierarchy() -> None:
     with TestClient(create_app()) as client:
-        assert client.post("/discover", json={}).json() == {
-            "level": {"id": "group", "display_name": "Group"},
-            "values": ["foo"],
-            "next_level": {"id": "area", "display_name": "Area"},
+        assert client.post("/views", json={"path": []}).json() == {
+            "hierarchy": {
+                "current": None,
+                "next": {"id": "group", "display_name": "Group"},
+                "values": ["foo"],
+            },
+            "views": [],
         }
-        assert client.post("/discover", json={"path": ["foo"]}).json() == {
-            "level": {"id": "area", "display_name": "Area"},
-            "values": ["bar"],
-            "next_level": {"id": "variant", "display_name": "Variant"},
+        area = client.post("/views", json={"path": ["foo", "bar"]}).json()
+        assert area["hierarchy"] == {
+            "current": {"id": "area", "display_name": "Area"},
+            "next": {"id": "variant", "display_name": "Variant"},
+            "values": ["baz"],
         }
-        assert client.post("/discover", json={"path": ["foo", "bar"]}).json() == {
-            "level": {"id": "variant", "display_name": "Variant"},
-            "values": ["baz", None],
+        assert [view["name"] for view in area["views"]] == ["marketing"]
+        leaf = client.post("/views", json={"path": ["foo", "bar", "baz"]}).json()
+        assert leaf["hierarchy"] == {
+            "current": {"id": "variant", "display_name": "Variant"},
+            "next": None,
+            "values": [],
         }
+        assert [view["name"] for view in leaf["views"]] == ["sales"]
 
 
-@pytest.mark.parametrize(
-    ("path", "expected"),
-    [
-        (None, {"marketing", "sales"}),
-        ([], {"marketing", "sales"}),
-        (["foo"], {"marketing", "sales"}),
-        (["foo", "bar"], {"marketing", "sales"}),
-        (["foo", "bar", None], {"marketing"}),
-        (["foo", "bar", "baz"], {"sales"}),
-    ],
-)
-def test_list_views_filters_by_hierarchy(
-    path: list[str | None] | None, expected: set[str]
-) -> None:
-    body = {} if path is None else {"path": path}
+def test_omitted_path_keeps_legacy_array() -> None:
     with TestClient(create_app()) as client:
         for endpoint in ("/views", "/views/list"):
-            response = client.post(endpoint, json=body)
+            response = client.post(endpoint, json={})
             assert response.status_code == 200
-            assert {view["name"] for view in response.json()} == expected
+            assert {view["name"] for view in response.json()} == {"marketing", "sales"}
+        assert client.post("/views/list", json={"path": []}).json()["views"] == []
 
 
 @pytest.mark.parametrize(
-    ("endpoint", "path", "status"),
+    ("path", "status"),
     [
-        ("/discover", ["missing"], 404),
-        ("/discover", ["foo", "bar", "baz"], 400),
-        ("/views", ["foo", "missing"], 404),
-        ("/views", ["foo", "bar", "missing"], 404),
-        ("/views", ["foo", "bar", "null"], 404),
-        ("/views", ["foo", "bar", "baz", "extra"], 400),
+        (["missing"], 404),
+        (["foo", "missing"], 404),
+        (["foo", "bar", None], 404),
+        (["foo", "bar", "null"], 404),
+        (["foo", "bar", "baz", "extra"], 400),
     ],
 )
-def test_invalid_discovery_path(
-    endpoint: str, path: list[str | None], status: int
-) -> None:
+def test_invalid_discovery_path(path: list[str | None], status: int) -> None:
     with TestClient(create_app()) as client:
-        response = client.post(endpoint, json={"path": path})
+        response = client.post("/views", json={"path": path})
     assert response.status_code == status
     assert response.json()["detail"]
 
 
-def test_discover_requires_bearer_when_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_views_requires_bearer_when_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SEMANTIC_LAYER_REQUIRE_AUTH", "1")
     with TestClient(create_app()) as client:
-        response = client.post("/discover", json={})
+        response = client.post("/views", json={"path": []})
     assert response.status_code == 401
+
+
+def test_discover_route_is_removed() -> None:
+    with TestClient(create_app()) as client:
+        assert client.post("/discover", json={}).status_code == 404
