@@ -3,13 +3,13 @@ from __future__ import annotations
 import pytest
 from litestar.testing import TestClient
 from semantic_api.app import create_app
+from semantic_api.discovery import browse
 
 
 def test_views_browse_mixed_depth_hierarchy() -> None:
     with TestClient(create_app()) as client:
         assert client.post("/views", json={"path": []}).json() == {
             "hierarchy": {
-                "current": None,
                 "next": {"id": "group", "display_name": "Group"},
                 "values": ["foo"],
             },
@@ -17,16 +17,13 @@ def test_views_browse_mixed_depth_hierarchy() -> None:
         }
         area = client.post("/views", json={"path": ["foo", "bar"]}).json()
         assert area["hierarchy"] == {
-            "current": {"id": "area", "display_name": "Area"},
             "next": {"id": "variant", "display_name": "Variant"},
             "values": ["baz"],
         }
         assert [view["name"] for view in area["views"]] == ["marketing"]
         leaf = client.post("/views", json={"path": ["foo", "bar", "baz"]}).json()
         assert leaf["hierarchy"] == {
-            "current": {"id": "variant", "display_name": "Variant"},
             "next": None,
-            "values": [],
         }
         assert [view["name"] for view in leaf["views"]] == ["sales"]
 
@@ -38,6 +35,15 @@ def test_omitted_path_keeps_legacy_array() -> None:
             assert response.status_code == 200
             assert {view["name"] for view in response.json()} == {"marketing", "sales"}
         assert client.post("/views/list", json={"path": []}).json()["views"] == []
+
+
+def test_empty_choices_keep_the_next_level() -> None:
+    hierarchy, views = browse([], [])
+    assert hierarchy == {
+        "next": {"id": "group", "display_name": "Group"},
+        "values": [],
+    }
+    assert views == []
 
 
 @pytest.mark.parametrize(

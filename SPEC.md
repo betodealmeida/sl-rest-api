@@ -123,7 +123,6 @@ location:
 ```json
 {
     "hierarchy": {
-        "current": {"id": "group", "display_name": "Group"},
         "next": {"id": "version", "display_name": "Version"},
         "values": ["main", "preview", null]
     },
@@ -131,13 +130,13 @@ location:
 }
 ```
 
-At `path: []`, `current` is `null`; at a terminal path, `next` is `null`
-and `values` is `[]`. Each non-null level has an `id` and `display_name`.
-`values` lists choices for `next`, in stable order, and can include JSON
-`null`. A view can exist at a partial path that also has child choices.
-Servers without a hierarchy return both levels as `null`, an empty `values`
-array, and their views at `path: []`. Both hierarchy choices and views must
-respect the caller's access.
+At a terminal path, `next` is `null` and `values` is omitted. Each non-null
+level has an `id` and `display_name`. When `next` is non-null, `values` is
+required and lists choices for `next`, in stable order; it may be empty or
+include JSON `null`. A view can exist at a partial path that also has child
+choices. Servers without a hierarchy return `{"next": null}` and their views
+at `path: []`. Both hierarchy choices and views must respect the caller's
+access.
 
 `name` is the stable identifier used in endpoint paths. The optional `display_name` is a human-readable label for presentation and may be a string or `null`. Clients should fall back to `name` when `display_name` is absent, `null`, or empty. Including it in this lightweight response lets clients render view pickers without fetching every view's full metadata.
 

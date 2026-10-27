@@ -54,7 +54,6 @@ def test_discovery_uses_position_and_filtered_listing_for_sql() -> None:
                 return response(
                     {
                         "hierarchy": {
-                            "current": None,
                             "next": {"id": "group", "display_name": "Group"},
                             "values": ["demo.metrics", "shared", "system.dj"],
                         },
@@ -70,7 +69,6 @@ def test_discovery_uses_position_and_filtered_listing_for_sql() -> None:
                 return response(
                     {
                         "hierarchy": {
-                            "current": {"id": "group", "display_name": "Group"},
                             "next": {"id": "version", "display_name": "Version"},
                             "values": values,
                         },
@@ -88,9 +86,7 @@ def test_discovery_uses_position_and_filtered_listing_for_sql() -> None:
             return response(
                 {
                     "hierarchy": {
-                        "current": {"id": "version", "display_name": "Version"},
                         "next": None,
-                        "values": [],
                     },
                     "views": views,
                 }
@@ -203,9 +199,7 @@ def test_discovery_uses_position_and_filtered_listing_for_sql() -> None:
             [],
             {
                 "hierarchy": {
-                    "current": None,
                     "next": None,
-                    "values": ["demo.metrics"],
                 },
                 "views": [],
             },
@@ -214,9 +208,7 @@ def test_discovery_uses_position_and_filtered_listing_for_sql() -> None:
             ["demo.metrics"],
             {
                 "hierarchy": {
-                    "current": {"id": "group", "display_name": "Group"},
                     "next": None,
-                    "values": ["main"],
                 },
                 "views": [],
             },
@@ -229,6 +221,15 @@ def test_browse_requires_two_levels(path, payload) -> None:
     with patch.object(dialect, "_post", return_value=response(payload)):
         with pytest.raises(ValueError, match="exactly two levels"):
             dialect._browse(path)
+
+
+def test_browse_rejects_values_at_terminal_path() -> None:
+    dialect = SemanticAPIDialect()
+    dialect._configuration = {}
+    payload = {"hierarchy": {"next": None, "values": []}, "views": []}
+    with patch.object(dialect, "_post", return_value=response(payload)):
+        with pytest.raises(ValueError, match="Invalid semantic view browsing response"):
+            dialect._browse(["demo.metrics", "main"])
 
 
 def test_missing_views_endpoint_is_an_error() -> None:

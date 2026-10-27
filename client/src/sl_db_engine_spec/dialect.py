@@ -280,8 +280,16 @@ class SemanticAPIDialect(APSWDialect):
         hierarchy = result.get("hierarchy") if isinstance(result, dict) else None
         if (
             not isinstance(hierarchy, dict)
-            or not isinstance(hierarchy.get("values"), list)
+            or "next" not in hierarchy
             or not isinstance(result.get("views"), list)
+        ):
+            raise ValueError("Invalid semantic view browsing response")
+        next_level = hierarchy["next"]
+        if next_level is None:
+            if "values" in hierarchy:
+                raise ValueError("Invalid semantic view browsing response")
+        elif (
+            not isinstance(hierarchy.get("values"), list)
             or any(
                 value is not None and (not isinstance(value, str) or not value)
                 for value in hierarchy["values"]
@@ -289,8 +297,7 @@ class SemanticAPIDialect(APSWDialect):
             or (not path and None in hierarchy["values"])
         ):
             raise ValueError("Invalid semantic view browsing response")
-        next_level = hierarchy.get("next")
-        if path and len(path) == 2 and (next_level is not None or hierarchy["values"]):
+        if path and len(path) == 2 and next_level is not None:
             raise ValueError("The Semantic Layer API must expose exactly two levels")
         if len(path) < 2 and (
             not isinstance(next_level, dict)

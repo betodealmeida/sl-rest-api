@@ -51,9 +51,7 @@ def browse(
         {location[depth] for _, location in matches if len(location) > depth},
         key=lambda value: (value is None, value or ""),
     )
-    hierarchy: dict[str, Any] = {
-        "current": _LEVELS[depth - 1] if depth else None,
-        "next": _LEVELS[depth] if values else None,
-        "values": values,
-    }
+    hierarchy: dict[str, Any] = {"next": _LEVELS[depth] if depth < len(_LEVELS) else None}
+    if hierarchy["next"] is not None:
+        hierarchy["values"] = values
     return hierarchy, [view for view, location in matches if len(location) == depth]
