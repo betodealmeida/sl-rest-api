@@ -22,7 +22,6 @@ from __future__ import annotations
 from typing import Any
 
 from superset.constants import PASSWORD_MASK
-
 from superset_core.semantic_layers.decorators import semantic_layer
 from superset_core.semantic_layers.layer import (
     SemanticLayer,
@@ -33,8 +32,8 @@ from superset_core.semantic_layers.layer import (
 
 from .client import APIClient, APIClientError
 from .configuration import (
-    APIConfiguration,
     HIERARCHY_FIELD_PREFIX,
+    APIConfiguration,
     encode_hierarchy_value,
     hierarchy_path_from_fields,
 )
@@ -121,44 +120,40 @@ def _add_discovery_fields(
     *,
     require_selection: bool,
 ) -> None:
-    """Add each known level and a placeholder for the next unknown level."""
+    """Build selectors from each selected path's next-level metadata."""
     properties = schema["properties"]
     order = schema["x-propertyOrder"]
     required = schema.setdefault("required", [])
     path: list[str | None] = []
     while True:
-        discovery = client.discover(path)
+        listing = client.browse(path)
+        next_level = listing["hierarchy"]["next"]
+        if next_level is None:
+            if len(selected_path) > len(path):
+                raise APIClientError("The hierarchy path exceeds the final level.")
+            break
         index = len(path)
         field = _hierarchy_field(index)
-        values = discovery["values"]
+        values = listing["hierarchy"]["values"]
         dependencies = (
             first_dependencies if index == 0 else [_hierarchy_field(index - 1)]
         )
         properties[field] = {
             "type": "string",
-            "title": discovery["level"]["display_name"],
+            "title": next_level["display_name"],
             "enum": [encode_hierarchy_value(value) for value in values],
             "x-enumNames": _labels(values),
+            "x-dynamic": True,
+            "x-dependsOn": [*dependencies, field],
         }
-        if dependencies:
-            properties[field]["x-dynamic"] = True
-            properties[field]["x-dependsOn"] = dependencies
         if index < locked_count:
             properties[field]["readOnly"] = True
             properties[field]["default"] = encode_hierarchy_value(selected_path[index])
-        elif require_selection:
+        elif require_selection and not listing["views"]:
             required.append(field)
         order.append(field)
 
         if index >= len(selected_path):
-            if next_level := discovery.get("next_level"):
-                next_field = _hierarchy_field(index + 1)
-                properties[next_field] = _placeholder(
-                    index + 1,
-                    [field],
-                    next_level["display_name"],
-                )
-                order.append(next_field)
             break
 
         selected = selected_path[index]
@@ -169,10 +164,6 @@ def _add_discovery_fields(
                 )
             break
         path.append(selected)
-        if "next_level" not in discovery:
-            if len(selected_path) > len(path):
-                raise APIClientError("The hierarchy path exceeds the final level.")
-            break
 
 
 def _effective_path(
@@ -271,7 +262,8 @@ class APISemanticLayer(SemanticLayer[APIConfiguration, APISemanticView]):
                     schema,
                     configuration.fixed_path,
                     dependencies,
-                    "Unable to load discovery choices. Check the URL and authentication.",
+                    "Unable to load hierarchy choices. "
+                    "Check the URL and authentication.",
                 )
         else:
             _add_unavailable_fields(

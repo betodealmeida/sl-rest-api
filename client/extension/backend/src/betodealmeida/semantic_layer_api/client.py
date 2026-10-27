@@ -41,6 +41,16 @@ class APIClientError(RuntimeError):
         self.status_code = status_code
 
 
+def _valid_level(value: Any) -> bool:
+    return (
+        isinstance(value, Mapping)
+        and isinstance(value.get("id"), str)
+        and bool(value["id"])
+        and isinstance(value.get("display_name"), str)
+        and bool(value["display_name"])
+    )
+
+
 class APIClient:
     """Small protocol client bound to one configuration and Superset user."""
 
@@ -54,50 +64,41 @@ class APIClient:
         if additional_configuration:
             self.additional_configuration.update(additional_configuration)
 
-    def discover(self, path: list[str | None]) -> dict[str, Any]:
-        """Discover the next level of the view hierarchy."""
-        payload = self._post(
-            "/discover",
-            {"runtime_configuration": self.additional_configuration, "path": path},
-        )
-        if (
-            not isinstance(payload, Mapping)
-            or not isinstance(payload.get("level"), Mapping)
-            or not isinstance(payload["level"].get("id"), str)
-            or not payload["level"]["id"]
-            or not isinstance(payload["level"].get("display_name"), str)
-            or not payload["level"]["display_name"]
-            or "has_next" in payload
-            or not isinstance(payload.get("values"), list)
-            or any(
-                value is not None and (not isinstance(value, str) or not value)
-                for value in payload["values"]
-            )
-            or (
-                "next_level" in payload
-                and (
-                    not isinstance(payload["next_level"], Mapping)
-                    or not isinstance(payload["next_level"].get("id"), str)
-                    or not payload["next_level"]["id"]
-                    or not isinstance(
-                        payload["next_level"].get("display_name"), str
-                    )
-                    or not payload["next_level"]["display_name"]
-                )
-            )
-        ):
-            raise APIClientError("The API returned invalid discovery metadata.")
-        return dict(payload)
-
-    def list_views(self, path: list[str | None]) -> list[dict[str, Any]]:
-        """Return lightweight semantic-view summaries."""
+    def browse(self, path: list[str | None]) -> dict[str, Any]:
+        """Return child choices and views at a selected hierarchy path."""
         payload = self._post(
             "/views",
             {"runtime_configuration": self.additional_configuration, "path": path},
         )
-        if not isinstance(payload, list):
-            raise APIClientError("The API returned an invalid view list.")
-        return [dict(item) for item in payload if isinstance(item, Mapping)]
+        hierarchy = payload.get("hierarchy") if isinstance(payload, Mapping) else None
+        next_level = hierarchy.get("next") if isinstance(hierarchy, Mapping) else None
+        if (
+            not isinstance(hierarchy, Mapping)
+            or "next" not in hierarchy
+            or not isinstance(payload.get("views"), list)
+            or (next_level is None and "values" in hierarchy)
+            or (
+                next_level is not None
+                and (
+                    not isinstance(hierarchy.get("values"), list)
+                    or any(
+                        value is not None and (not isinstance(value, str) or not value)
+                        for value in hierarchy["values"]
+                    )
+                )
+            )
+            or (next_level is not None and not _valid_level(next_level))
+        ):
+            raise APIClientError("The API returned invalid hierarchy metadata.")
+        return dict(payload)
+
+    def list_views(self, path: list[str | None]) -> list[dict[str, Any]]:
+        """Return lightweight semantic-view summaries."""
+        return [
+            dict(item)
+            for item in self.browse(path)["views"]
+            if isinstance(item, Mapping)
+        ]
 
     def get_view(self, name: str) -> dict[str, Any]:
         """Return the complete metadata for one semantic view."""

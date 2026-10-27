@@ -20,14 +20,14 @@ tied to a semantic-layer UUID and are never exposed to browser code.
   are derived as `<api_url>/authorize` and `<api_url>/token`.
 - `scope`: optional OAuth2 scope string.
 
-After authentication, the extension calls `POST /discover` to populate
-hierarchy selectors. A response's `next_level` names the next selector; its
-absence marks the final level. A semantic layer can fix any leading selections.
+After authentication, the extension calls `POST /views` with a `path` to
+populate hierarchy selectors and list views at the selected location. The
+response's `hierarchy.next` names the next selector; `null` marks the final
+level. A semantic layer can fix any leading selections.
 When adding a semantic view, those selections are locked and the remaining
 levels can be selected. The extension verifies the fixed path again when a
 saved semantic view is used.
-The API must also support path-filtered `POST /views/`; the extension does not
-use the older `/views/list` route.
+The extension does not use the older `/views/list` route.
 
 The OAuth redirect URI is:
 
