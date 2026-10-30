@@ -18,6 +18,7 @@
 from collections.abc import Callable
 from typing import Any
 
+from superset_core.rest_api import decorators as rest_api_decorators
 from superset_core.semantic_layers import decorators
 
 
@@ -29,3 +30,5 @@ def _semantic_layer(**_: Any) -> Callable[[type], type]:
 
 
 decorators.semantic_layer = _semantic_layer
+
+rest_api_decorators.api = _semantic_layer

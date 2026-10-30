@@ -24,7 +24,7 @@ import secrets
 import time
 from collections.abc import Mapping
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 
 import requests
 from flask import request
@@ -36,7 +36,7 @@ from superset_core.semantic_layers.layer import (
 from .configuration import APIConfiguration
 
 ACTION_ID = "oauth2"
-PENDING_SECRET_KEY = "oauth2:pending"
+PENDING_KEY_PREFIX = "oauth2:pending:"
 TOKEN_EXPIRY_SKEW_SECONDS = 30
 PENDING_LIFETIME_SECONDS = 600
 
@@ -68,15 +68,27 @@ def has_usable_credentials(configuration: APIConfiguration) -> bool:
     )
 
 
-def start_authorization(configuration: APIConfiguration) -> str:
+def pending_secret_key(state: str) -> str:
+    """Keep each authorization attempt in its own user-scoped secret record."""
+    return PENDING_KEY_PREFIX + hashlib.sha256(state.encode()).hexdigest()
+
+
+def start_authorization(
+    configuration: APIConfiguration, return_url: str | None = None
+) -> str:
     """Persist an OAuth2 transaction and return its authorization URL."""
+    if return_url is not None:
+        completion = urlsplit(return_url)
+        origin = urlsplit(request.url_root)
+        if (completion.scheme, completion.netloc) != (origin.scheme, origin.netloc):
+            raise ValueError("The completion URL must use the Superset origin.")
     context = get_context()
     state = secrets.token_urlsafe(32)
     extension = context.extension
     callback_path = f"extensions/{extension.publisher}/{extension.name}/oauth/callback"
     redirect_uri = f"{request.url_root.rstrip('/')}/{callback_path}"
     context.storage.secrets.set(
-        PENDING_SECRET_KEY,
+        pending_secret_key(state),
         {
             "state": state,
             "created_at": time.time(),
@@ -85,6 +97,7 @@ def start_authorization(configuration: APIConfiguration) -> str:
             "client_secret": configuration.client_secret.get_secret_value(),
             "token_url": configuration.resolved_token_url,
             "redirect_uri": redirect_uri,
+            "return_url": return_url,
             "request_timeout": configuration.request_timeout,
         },
     )
@@ -99,10 +112,11 @@ def start_authorization(configuration: APIConfiguration) -> str:
     return f"{configuration.resolved_authorization_url}?{urlencode(parameters)}"
 
 
-def exchange_authorization_code(code: str, state: str) -> None:
-    """Validate the callback, exchange its code, and store the personal token."""
+def exchange_authorization_code(code: str, state: str) -> str | None:
+    """Save the token after validating state, then return the host completion URL."""
     secrets_state = get_context().storage.secrets
-    value = secrets_state.get(PENDING_SECRET_KEY)
+    pending_key = pending_secret_key(state)
+    value = secrets_state.get(pending_key)
     pending = dict(value) if isinstance(value, Mapping) else None
     if not pending or not secrets.compare_digest(str(pending.get("state", "")), state):
         raise OAuth2ExchangeError("The OAuth2 state is missing or invalid.")
@@ -110,7 +124,7 @@ def exchange_authorization_code(code: str, state: str) -> None:
     if not isinstance(created_at, (int, float)) or (
         time.time() - created_at > PENDING_LIFETIME_SECONDS
     ):
-        secrets_state.remove(PENDING_SECRET_KEY)
+        secrets_state.remove(pending_key)
         raise OAuth2ExchangeError("The OAuth2 authorization request has expired.")
 
     data = {
@@ -126,7 +140,9 @@ def exchange_authorization_code(code: str, state: str) -> None:
         float(pending.get("request_timeout", 60.0)),
     )
     secrets_state.set(str(pending["credential_key"]), token)
-    secrets_state.remove(PENDING_SECRET_KEY)
+    secrets_state.remove(pending_key)
+    return_url = pending.get("return_url")
+    return return_url if isinstance(return_url, str) else None
 
 
 def get_access_token(configuration: APIConfiguration) -> str:

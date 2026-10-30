@@ -19,10 +19,12 @@
 
 from __future__ import annotations
 
-from flask import request, Response
-from flask_appbuilder.api import expose, permission_name, protect, safe
+from flask import redirect, request, Response
+from flask_appbuilder.api import expose, permission_name, safe
 from superset_core.rest_api.api import RestApi
 from superset_core.rest_api.decorators import api
+
+from superset.views.base_api import protect_read
 
 from .oauth import exchange_authorization_code, OAuth2ExchangeError
 
@@ -40,7 +42,7 @@ class OAuthAPI(RestApi):
     class_permission_name = "SemanticLayer"
 
     @expose("/callback", methods=("GET",))
-    @protect()
+    @protect_read("SemanticLayer", "SemanticView")
     @safe
     @permission_name("read")
     def callback(self) -> Response:
@@ -55,9 +57,11 @@ class OAuthAPI(RestApi):
         if not code or not state:
             return _message("The OAuth2 callback is incomplete.", 400)
         try:
-            exchange_authorization_code(code, state)
+            return_url = exchange_authorization_code(code, state)
         except OAuth2ExchangeError:
             return _message("Authorization could not be completed.", 400)
+        if return_url is not None:
+            return redirect(return_url)
         return _message("Account connected. You can close this window.", 200)
 
 

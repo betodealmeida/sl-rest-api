@@ -15,6 +15,9 @@
 # specific language governing permissions and limitations
 # under the License.
 
+from unittest.mock import Mock
+
+import pytest
 from betodealmeida.semantic_layer_api.configuration import APIConfiguration
 from betodealmeida.semantic_layer_api.layer import APISemanticLayer
 
@@ -23,7 +26,7 @@ def configuration() -> APIConfiguration:
     return APIConfiguration(
         api_url="https://semantic-layer.example.test/api",
         client_id="client-id",
-        client_secret="client-secret",
+        client_secret="client-secret",  # noqa: S106
     )
 
 
@@ -61,3 +64,18 @@ def test_configuration_action_reflects_personal_token(monkeypatch) -> None:
     assert action.id == "oauth2"
     assert action.required is True
     assert action.status == "connected"
+
+
+def test_configuration_action_passes_host_completion_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The host's completion URL reaches the OAuth state creator unchanged."""
+    start = Mock(return_value="https://provider.example/authorize")
+    monkeypatch.setattr(
+        "betodealmeida.semantic_layer_api.layer.start_authorization", start
+    )
+    config = configuration()
+    return_url = "https://superset.example.test/complete/flow"
+    result = APISemanticLayer.execute_configuration_action("oauth2", config, return_url)
+    start.assert_called_once_with(config, return_url)
+    assert result.redirect_url == "https://provider.example/authorize"

@@ -21,7 +21,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from superset.constants import PASSWORD_MASK
 from superset_core.semantic_layers.decorators import semantic_layer
 from superset_core.semantic_layers.layer import (
     SemanticLayer,
@@ -30,11 +29,13 @@ from superset_core.semantic_layers.layer import (
     SemanticLayerAuthenticationRequiredError,
 )
 
+from superset.constants import PASSWORD_MASK
+
 from .client import APIClient, APIClientError
 from .configuration import (
-    HIERARCHY_FIELD_PREFIX,
     APIConfiguration,
     encode_hierarchy_value,
+    HIERARCHY_FIELD_PREFIX,
     hierarchy_path_from_fields,
 )
 from .oauth import ACTION_ID, has_usable_credentials, start_authorization
@@ -343,7 +344,7 @@ class APISemanticLayer(SemanticLayer[APIConfiguration, APISemanticView]):
         if not configuration.client_id or not configuration.client_secret:
             raise ValueError("Complete the OAuth2 client credentials first.")
         return SemanticLayerActionResult(
-            redirect_url=start_authorization(configuration),
+            redirect_url=start_authorization(configuration, return_url),
         )
 
     def get_semantic_views(

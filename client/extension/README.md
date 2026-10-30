@@ -36,3 +36,21 @@ The OAuth redirect URI is:
 ```
 
 Register the fully-qualified URI with the OAuth2 provider.
+
+## OAuth completion
+
+The extension preserves Superset's same-origin `return_url` in encrypted,
+user-scoped OAuth state. After validating state and exchanging the code, the
+callback saves the token and redirects to that URL. Superset's completion page
+notifies the originating tab to refresh the configuration or retry its operation.
+The callback accepts Semantic Layer or Semantic View read permission.
+Each attempt has a separate pending record, so multiple tabs can connect without
+overwriting each other's completion URL. Invalid, expired, and replayed state
+cannot complete a connection.
+
+Rebuild and bundle from this directory after changing the backend, replace the
+installed `.supx`, and reload both the Superset web and worker processes.
+For a manual check, first connect and load a chart as one user. Open the same
+chart as a second user who has access to its semantic view but has not connected.
+Authorization should be requested there, and completing it should retry the
+chart without opening the Semantic Layer configuration modal.
