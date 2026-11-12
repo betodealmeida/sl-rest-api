@@ -20,6 +20,7 @@ from unittest.mock import Mock
 import pytest
 from betodealmeida.semantic_layer_api.configuration import APIConfiguration
 from betodealmeida.semantic_layer_api.layer import APISemanticLayer
+from superset_core.semantic_layers.config import SemanticCredentialReadiness
 
 
 def configuration() -> APIConfiguration:
@@ -30,14 +31,18 @@ def configuration() -> APIConfiguration:
     )
 
 
-def test_configuration_schema_marks_client_secret_write_only() -> None:
-    schema = APISemanticLayer.get_configuration_schema()
+def test_configuration_schema_marks_client_secret_write_only(transport) -> None:
+    schema = APISemanticLayer.get_configuration_schema(
+        transport=transport, readiness=SemanticCredentialReadiness.UNRESOLVED
+    )
 
     assert schema["properties"]["client_secret"]["writeOnly"] is True
 
 
-def test_configuration_schema_uses_plain_optional_url_fields() -> None:
-    properties = APISemanticLayer.get_configuration_schema()["properties"]
+def test_configuration_schema_uses_plain_optional_url_fields(transport) -> None:
+    properties = APISemanticLayer.get_configuration_schema(
+        transport=transport, readiness=SemanticCredentialReadiness.UNRESOLVED
+    )["properties"]
 
     assert properties["authorization_url"]["type"] == "string"
     assert properties["authorization_url"]["default"] == ""
@@ -45,8 +50,10 @@ def test_configuration_schema_uses_plain_optional_url_fields() -> None:
     assert properties["token_url"]["default"] == ""
 
 
-def test_configuration_schema_omits_unused_mapping_fields() -> None:
-    properties = APISemanticLayer.get_configuration_schema()["properties"]
+def test_configuration_schema_omits_unused_mapping_fields(transport) -> None:
+    properties = APISemanticLayer.get_configuration_schema(
+        transport=transport, readiness=SemanticCredentialReadiness.UNRESOLVED
+    )["properties"]
 
     assert "additional_configuration" not in properties
     assert "authorization_params" not in properties

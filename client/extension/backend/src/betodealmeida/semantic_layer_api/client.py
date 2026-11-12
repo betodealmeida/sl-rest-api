@@ -20,17 +20,24 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from time import monotonic
 from typing import Any, cast
 
-import requests
 from superset_core.semantic_layers.layer import (
     SemanticLayerAuthenticationRequiredError,
+)
+from superset_core.semantic_layers.transport import (
+    ProviderRequestError,
+    ProviderTransport,
+    RequestBudget,
 )
 
 from .configuration import APIConfiguration
 from .oauth import ACTION_ID, discard_token, get_access_token
 
 _REDIRECT_STATUSES = {301, 302, 303, 307, 308}
+# Bound even query responses; an excessive result must be narrowed by the caller.
+MAX_RESPONSE_BYTES = 64 * 1024 * 1024
 
 
 class APIClientError(RuntimeError):
@@ -58,8 +65,11 @@ class APIClient:
         self,
         configuration: APIConfiguration,
         additional_configuration: Mapping[str, Any] | None = None,
+        *,
+        transport: ProviderTransport,
     ) -> None:
         self.configuration = configuration
+        self.transport = transport
         self.additional_configuration: dict[str, Any] = {}
         if additional_configuration:
             self.additional_configuration.update(additional_configuration)
@@ -178,50 +188,38 @@ class APIClient:
         else:
             token = get_access_token(self.configuration)
         try:
-            response = requests.post(
+            response = self.transport.request(
+                "Semantic Layer API",
+                "POST",
                 f"{self.configuration.api_url}{path}",
+                budget=RequestBudget(
+                    deadline=monotonic() + self.configuration.request_timeout,
+                    max_bytes=MAX_RESPONSE_BYTES,
+                ),
                 json=_json_value(dict(body)),
                 headers={"Authorization": f"Bearer {token}"},
-                timeout=self.configuration.request_timeout,
-                allow_redirects=False,
             )
-        except requests.RequestException as ex:
-            raise APIClientError("Unable to reach the Semantic Layer API.") from ex
-
-        if response.status_code == 401 or response.status_code in _REDIRECT_STATUSES:
-            if self.configuration.auth_type == "oauth2":
-                discard_token(self.configuration)
-                raise SemanticLayerAuthenticationRequiredError(
-                    ACTION_ID,
-                    "Semantic Layer API authentication is required.",
-                )
-            raise APIClientError("The Semantic Layer API rejected the access token.")
-        if response.status_code == 404:
-            raise APIClientError(
-                _response_detail(response, "Semantic view not found."),
-                status_code=404,
-            )
+        except ProviderRequestError as ex:
+            if ex.status == 401 or ex.status in _REDIRECT_STATUSES:
+                if self.configuration.auth_type == "oauth2":
+                    discard_token(self.configuration)
+                    raise SemanticLayerAuthenticationRequiredError(
+                        ACTION_ID,
+                        "Semantic Layer API authentication is required.",
+                    ) from ex
+                raise APIClientError(
+                    "The Semantic Layer API rejected the access token.",
+                    status_code=ex.status,
+                ) from ex
+            if ex.status == 404:
+                raise APIClientError(
+                    "Semantic view or API route not found.", status_code=404
+                ) from ex
+            raise APIClientError(str(ex), status_code=ex.status) from ex
         try:
-            response.raise_for_status()
             return response.json()
-        except requests.RequestException as ex:
-            raise APIClientError(
-                _response_detail(response, "Semantic Layer API request failed.")
-            ) from ex
         except ValueError as ex:
             raise APIClientError("The API returned a non-JSON response.") from ex
-
-
-def _response_detail(response: requests.Response, fallback: str) -> str:
-    try:
-        payload = response.json()
-    except ValueError:
-        return fallback
-    return (
-        str(payload.get("detail", fallback))
-        if isinstance(payload, Mapping)
-        else fallback
-    )
 
 
 def _json_value(value: Any) -> Any:

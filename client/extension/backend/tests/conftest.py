@@ -17,9 +17,16 @@
 
 from collections.abc import Callable
 from typing import Any
+from unittest.mock import Mock
 
+import pytest
 from superset_core.rest_api import decorators as rest_api_decorators
 from superset_core.semantic_layers import decorators
+from superset_core.semantic_layers.context import (
+    ExecutionOrigin,
+    SemanticExecutionContext,
+)
+from superset_core.semantic_layers.transport import ProviderTransport
 
 
 def _semantic_layer(**_: Any) -> Callable[[type], type]:
@@ -32,3 +39,24 @@ def _semantic_layer(**_: Any) -> Callable[[type], type]:
 decorators.semantic_layer = _semantic_layer
 
 rest_api_decorators.api = _semantic_layer
+
+
+@pytest.fixture
+def transport():
+    return Mock(spec=ProviderTransport)
+
+
+@pytest.fixture
+def binding(transport):
+    return {
+        "transport": transport,
+        "cache_token": "host-token",
+        "context": SemanticExecutionContext(
+            principal_id="1",
+            role_ids=("2",),
+            origin=ExecutionOrigin.REQUEST,
+            is_guest=False,
+            namespace="test",
+            identity_digest="opaque-identity",
+        ),
+    }

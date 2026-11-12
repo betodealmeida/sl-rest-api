@@ -22,10 +22,15 @@ from __future__ import annotations
 import json
 
 import pytest
-import requests
 from betodealmeida.semantic_layer_api.client import APIClient, APIClientError
 from betodealmeida.semantic_layer_api.configuration import APIConfiguration
 from betodealmeida.semantic_layer_api.layer import APISemanticLayer
+from superset_core.semantic_layers.config import SemanticCredentialReadiness
+from superset_core.semantic_layers.transport import (
+    ProviderRequestError,
+    ProviderRequestFailure,
+    ProviderResponse,
+)
 
 NAMESPACE = {"id": "namespace", "display_name": "Namespace"}
 BRANCH = {"id": "branch", "display_name": "Branch"}
@@ -42,15 +47,16 @@ def configuration(**overrides) -> APIConfiguration:
     )
 
 
-def response(payload: object) -> requests.Response:
-    result = requests.Response()
-    result.status_code = 200
-    result._content = json.dumps(payload).encode()
-    return result
+def response(payload: object) -> ProviderResponse:
+    return ProviderResponse(
+        200, {}, json.dumps(payload).encode(), "https://dj.example.test/semantic/views"
+    )
 
 
 class FakeClient:
-    def __init__(self, configuration, additional_configuration=None) -> None:
+    def __init__(
+        self, configuration, additional_configuration=None, *, transport=None
+    ) -> None:
         self.additional_configuration = additional_configuration or {}
 
     def browse(self, path):
@@ -81,10 +87,16 @@ class FakeClient:
         return self.browse(path)["views"]
 
 
-def test_selectors_use_next_level_and_allow_direct_views(monkeypatch) -> None:
+def test_selectors_use_next_level_and_allow_direct_views(
+    monkeypatch, transport
+) -> None:
     monkeypatch.setattr("betodealmeida.semantic_layer_api.layer.APIClient", FakeClient)
 
-    root = APISemanticLayer.get_configuration_schema(configuration())
+    root = APISemanticLayer.get_configuration_schema(
+        configuration(),
+        transport=transport,
+        readiness=SemanticCredentialReadiness.RESOLVED,
+    )
     assert root["properties"]["hierarchy_0"]["title"] == "Namespace"
     assert root["properties"]["hierarchy_0"]["x-dynamic"] is True
     assert "hierarchy_0" in root["properties"]["hierarchy_0"]["x-dependsOn"]
@@ -92,6 +104,8 @@ def test_selectors_use_next_level_and_allow_direct_views(monkeypatch) -> None:
 
     namespace = APISemanticLayer.get_runtime_schema(
         configuration(hierarchy_0="demo.metrics"),
+        transport=transport,
+        readiness=SemanticCredentialReadiness.RESOLVED,
     )
     assert namespace["properties"]["hierarchy_1"]["title"] == "Branch"
     assert namespace["properties"]["hierarchy_1"]["enum"] == ["main", "unversioned"]
@@ -103,12 +117,14 @@ def test_selectors_use_next_level_and_allow_direct_views(monkeypatch) -> None:
     assert "hierarchy_2" not in namespace["properties"]
 
     branch = APISemanticLayer.get_configuration_schema(
-        configuration(hierarchy_0="demo.metrics", hierarchy_1="main")
+        configuration(hierarchy_0="demo.metrics", hierarchy_1="main"),
+        transport=transport,
+        readiness=SemanticCredentialReadiness.RESOLVED,
     )
     assert "hierarchy_2" not in branch["properties"]
 
 
-def test_selector_supports_third_level(monkeypatch) -> None:
+def test_selector_supports_third_level(monkeypatch, transport) -> None:
     project = {"id": "project", "display_name": "Project"}
 
     class ThreeLevelClient(FakeClient):
@@ -132,16 +148,18 @@ def test_selector_supports_third_level(monkeypatch) -> None:
         "betodealmeida.semantic_layer_api.layer.APIClient", ThreeLevelClient
     )
     schema = APISemanticLayer.get_configuration_schema(
-        configuration(hierarchy_0="demo.metrics", hierarchy_1="main")
+        configuration(hierarchy_0="demo.metrics", hierarchy_1="main"),
+        transport=transport,
+        readiness=SemanticCredentialReadiness.RESOLVED,
     )
     assert schema["properties"]["hierarchy_2"]["title"] == "Project"
     assert schema["properties"]["hierarchy_2"]["enum"] == ["alpha"]
 
 
-def test_fixed_path_rejects_outside_view_at_use_time(monkeypatch) -> None:
+def test_fixed_path_rejects_outside_view_at_use_time(monkeypatch, binding) -> None:
     monkeypatch.setattr("betodealmeida.semantic_layer_api.layer.APIClient", FakeClient)
     layer = APISemanticLayer(
-        configuration(hierarchy_0="demo.metrics", hierarchy_1="main")
+        configuration(hierarchy_0="demo.metrics", hierarchy_1="main"), **binding
     )
     with pytest.raises(ValueError, match="conflicts"):
         layer.get_semantic_view(
@@ -165,21 +183,21 @@ def test_fixed_path_rejects_outside_view_at_use_time(monkeypatch) -> None:
         {"hierarchy": {"values": []}, "views": []},
     ],
 )
-def test_client_rejects_invalid_hierarchy(monkeypatch, payload) -> None:
-    monkeypatch.setattr(requests, "post", lambda *args, **kwargs: response(payload))
+def test_client_rejects_invalid_hierarchy(transport, payload) -> None:
+    transport.request.return_value = response(payload)
     with pytest.raises(APIClientError, match="invalid hierarchy metadata"):
-        APIClient(configuration()).browse([])
+        APIClient(configuration(), transport=transport).browse([])
 
 
-def test_client_uses_views_for_browsing_and_listing(monkeypatch) -> None:
+def test_client_uses_views_for_browsing_and_listing(transport) -> None:
     calls = []
 
-    def post(url, **kwargs):
+    def post(provider, method, url, **kwargs):
         calls.append((url, kwargs["json"]))
         return response(FakeClient(None).browse(kwargs["json"]["path"]))
 
-    monkeypatch.setattr(requests, "post", post)
-    client = APIClient(configuration())
+    transport.request.side_effect = post
+    client = APIClient(configuration(), transport=transport)
     assert client.browse([])["hierarchy"]["next"] == NAMESPACE
     assert client.list_views(["demo.metrics", "main"]) == [
         {"name": "demo.metrics.main.download_session"}
@@ -190,12 +208,10 @@ def test_client_uses_views_for_browsing_and_listing(monkeypatch) -> None:
     ]
 
 
-def test_missing_views_route_surfaces_error(monkeypatch) -> None:
-    def post(*args, **kwargs):
-        result = response({"detail": "Not found"})
-        result.status_code = 404
-        return result
-
-    monkeypatch.setattr(requests, "post", post)
-    with pytest.raises(APIClientError, match="Not found"):
-        APIClient(configuration()).browse([])
+def test_missing_views_route_surfaces_error(transport) -> None:
+    transport.request.side_effect = ProviderRequestError(
+        ProviderRequestFailure.HTTP_STATUS, status=404
+    )
+    with pytest.raises(APIClientError, match="not found") as error:
+        APIClient(configuration(), transport=transport).browse([])
+    assert error.value.status_code == 404

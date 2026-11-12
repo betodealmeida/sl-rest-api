@@ -21,6 +21,11 @@ from __future__ import annotations
 
 from typing import Any
 
+from superset_core.semantic_layers.config import SemanticCredentialReadiness
+from superset_core.semantic_layers.context import (
+    SemanticCredentials,
+    SemanticExecutionContext,
+)
 from superset_core.semantic_layers.decorators import semantic_layer
 from superset_core.semantic_layers.layer import (
     SemanticLayer,
@@ -28,14 +33,13 @@ from superset_core.semantic_layers.layer import (
     SemanticLayerActionResult,
     SemanticLayerAuthenticationRequiredError,
 )
-
-from superset.constants import PASSWORD_MASK
+from superset_core.semantic_layers.transport import ProviderTransport
 
 from .client import APIClient, APIClientError
 from .configuration import (
+    HIERARCHY_FIELD_PREFIX,
     APIConfiguration,
     encode_hierarchy_value,
-    HIERARCHY_FIELD_PREFIX,
     hierarchy_path_from_fields,
 )
 from .oauth import ACTION_ID, has_usable_credentials, start_authorization
@@ -62,7 +66,7 @@ def _can_discover(configuration: APIConfiguration) -> bool:
         return False
     if configuration.auth_type == "access_token":
         token = configuration.access_token
-        return bool(token and token.get_secret_value() not in ("", PASSWORD_MASK))
+        return bool(token and token.get_secret_value())
     return bool(
         configuration.client_id
         and configuration.client_secret
@@ -195,20 +199,45 @@ class APISemanticLayer(SemanticLayer[APIConfiguration, APISemanticView]):
 
     configuration_class = APIConfiguration
 
-    def __init__(self, configuration: APIConfiguration):
+    def __init__(
+        self,
+        configuration: APIConfiguration,
+        *,
+        cache_token: str,
+        context: SemanticExecutionContext,
+        transport: ProviderTransport,
+    ) -> None:
         self.configuration = configuration
+        self.cache_token = cache_token
+        self.context = context
+        self.transport = transport
 
     @classmethod
     def from_configuration(
         cls,
         configuration: dict[str, Any],
+        *,
+        cache_token: str,
+        context: SemanticExecutionContext,
+        transport: ProviderTransport,
+        credentials: SemanticCredentials | None = None,
     ) -> APISemanticLayer:
-        return cls(APIConfiguration.model_validate(configuration))
+        if credentials is not None:
+            raise ValueError("Only connection credentials are supported.")
+        return cls(
+            APIConfiguration.model_validate(configuration),
+            cache_token=cache_token,
+            context=context,
+            transport=transport,
+        )
 
     @classmethod
     def get_configuration_schema(
         cls,
         configuration: APIConfiguration | None = None,
+        *,
+        transport: ProviderTransport,
+        readiness: SemanticCredentialReadiness,
     ) -> dict[str, Any]:
         schema = APIConfiguration.model_json_schema()
         properties = schema["properties"]
@@ -241,9 +270,13 @@ class APISemanticLayer(SemanticLayer[APIConfiguration, APISemanticView]):
         if auth_type == "oauth2":
             dependencies.append("client_secret")
 
-        if configuration and _can_discover(configuration):
+        if (
+            readiness is SemanticCredentialReadiness.RESOLVED
+            and configuration
+            and _can_discover(configuration)
+        ):
             try:
-                client = APIClient(configuration)
+                client = APIClient(configuration, transport=transport)
                 _add_discovery_fields(
                     schema,
                     client,
@@ -281,6 +314,9 @@ class APISemanticLayer(SemanticLayer[APIConfiguration, APISemanticView]):
         cls,
         configuration: APIConfiguration,
         runtime_data: dict[str, Any] | None = None,
+        *,
+        transport: ProviderTransport,
+        readiness: SemanticCredentialReadiness,
     ) -> dict[str, Any]:
         schema: dict[str, Any] = {
             "type": "object",
@@ -289,8 +325,18 @@ class APISemanticLayer(SemanticLayer[APIConfiguration, APISemanticView]):
             "properties": {},
             "x-propertyOrder": [],
         }
-        client = APIClient(configuration)
         selected, _ = _effective_path(configuration, runtime_data or {})
+        if readiness is not SemanticCredentialReadiness.RESOLVED or not _can_discover(
+            configuration
+        ):
+            _add_unavailable_fields(
+                schema,
+                selected,
+                [],
+                "Complete authentication to load discovery choices.",
+            )
+            return schema
+        client = APIClient(configuration, transport=transport)
         _add_discovery_fields(
             schema,
             client,
@@ -352,7 +398,7 @@ class APISemanticLayer(SemanticLayer[APIConfiguration, APISemanticView]):
         runtime_configuration: dict[str, Any],
     ) -> set[APISemanticView]:
         path, additional = _effective_path(self.configuration, runtime_configuration)
-        client = APIClient(self.configuration, additional)
+        client = APIClient(self.configuration, additional, transport=self.transport)
         return {
             APISemanticView(str(summary["name"]), client, summary)
             for summary in client.list_views(path)
@@ -365,7 +411,7 @@ class APISemanticLayer(SemanticLayer[APIConfiguration, APISemanticView]):
         additional_configuration: dict[str, Any],
     ) -> APISemanticView:
         path, additional = _effective_path(self.configuration, additional_configuration)
-        client = APIClient(self.configuration, additional)
+        client = APIClient(self.configuration, additional, transport=self.transport)
         if path and name not in {
             str(summary["name"]) for summary in client.list_views(path)
         }:
