@@ -48,24 +48,19 @@ def _view_payload(view) -> dict[str, Any]:  # noqa: ANN001 - SemanticView
     }
 
 
-def _browse_views(data: BrowseViewsRequest) -> dict[str, Any]:
-    views = registry.layer().get_semantic_views(data.runtime_configuration)
-    hierarchy, direct_views = browse(views, data.path)
-    return {
-        "hierarchy": hierarchy,
-        "views": [_view_summary_payload(view) for view in direct_views],
-    }
-
-
-@post("/views", status_code=HTTP_200_OK, guards=[require_bearer], tags=["views"])
-async def browse_views(data: BrowseViewsRequest) -> dict[str, Any]:
-    return _browse_views(data)
-
-
 class ViewsController(Controller):
     path = "/views"
     tags = ["views"]
     guards = [require_bearer]
+
+    @post("/", status_code=HTTP_200_OK)
+    async def browse_views(self, data: BrowseViewsRequest) -> dict[str, Any]:
+        views = registry.layer().get_semantic_views(data.runtime_configuration)
+        hierarchy, direct_views = browse(views, data.path)
+        return {
+            "hierarchy": hierarchy,
+            "views": [_view_summary_payload(view) for view in direct_views],
+        }
 
     @post("/list", status_code=HTTP_200_OK)
     async def list_views_legacy(
