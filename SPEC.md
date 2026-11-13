@@ -81,9 +81,12 @@ Examples:
 
 ## Endpoints
 
-### `POST /views` (`POST /views/list` supported but deprecated)
+### `POST /views/list` (deprecated)
 
-Lists semantic views. `POST` is used because the runtime configuration is a free-form JSON object.
+Lists all matching semantic views as a flat array for existing clients. This
+endpoint does not accept `path`; including it, even as `null` or `[]`, is a
+request validation error. Runtime configuration continues to filter the list
+as supported by the producer.
 
 Request:
 
@@ -91,15 +94,7 @@ Request:
 {"runtime_configuration": {}}
 ```
 
-An optional `path` selects a location in the discovery hierarchy. Each array
-element is an opaque value returned in the preceding response's
-`hierarchy.values`; clients must not split values on punctuation. The JSON
-value `null` is distinct from every string, including `"null"`, and represents
-an absent value at that level. An unknown selection returns `404`; a path
-beyond the final level returns `400`.
-
-When `path` is omitted, the response remains an array of all matching views.
-This preserves existing clients, including clients using `/views/list`:
+Response:
 
 ```json
 [
@@ -112,9 +107,28 @@ This preserves existing clients, including clients using `/views/list`:
 ]
 ```
 
-When `path` is present, including an empty array, the response describes the
-current location, its immediate child choices, and views at the current
-location:
+### `POST /views`
+
+Browses semantic views at a location in the discovery hierarchy. `POST` is used
+because the runtime configuration is a free-form JSON object. The `path` array
+is required; use `[]` to browse the root. An omitted or `null` path is a request
+validation error. This endpoint always returns an object with `hierarchy` and
+`views`, including when the path is empty.
+
+Request:
+
+```json
+{"runtime_configuration": {}, "path": []}
+```
+
+Each path element is an opaque value returned in the preceding response's
+`hierarchy.values`; clients must not split values on punctuation. The JSON
+value `null` inside the array is distinct from every string, including
+`"null"`, and represents an absent value at that level. An unknown selection
+returns `404`; a path beyond the final level returns `400`.
+
+The response describes the current location, its immediate child choices, and
+views at the current location. For example:
 
 ```json
 {"runtime_configuration": {}, "path": ["example.area"]}
@@ -581,6 +595,7 @@ Same shape as `compatible-metrics`, returning dimensions.
 
 ### Unreleased
 
+- Split discovery by endpoint: `POST /views` requires a `path` array and always returns a hierarchy object; deprecated `POST /views/list` rejects `path` and always returns a flat array.
 - Semantic views may now expose a top-level, nullable `display_name` in list and metadata responses. Clients fall back to the stable `name` when it is absent, `null`, or empty.
 - Error responses now follow RFC 9457 Problem Details for HTTP APIs and should use `application/problem+json`.
 - Column metadata may now be exposed on dimension and metric objects returned by `POST /views/{view_name}`. The optional `metadata` object now has a strict top-level contract: `display_name`, `semantic_type`, `unit`, `attributes`, `format`, `filter`, and `extensions`.

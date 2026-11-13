@@ -332,7 +332,7 @@ class SemanticAPIDialect(APSWDialect):
                 path.append(decode_schema_label(self._schema))
         if not path:
             response = self._post(
-                "/views", {"runtime_configuration": self._configuration}
+                "/views/list", {"runtime_configuration": self._configuration}
             )
             self._check_response(response)
             self._views = sorted(view["name"] for view in response.json())

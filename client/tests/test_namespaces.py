@@ -46,9 +46,10 @@ def test_discovery_uses_position_and_filtered_listing_for_sql() -> None:
     def post(url, **kwargs):
         body = kwargs["json"]
         requests_made.append((url, body))
+        if url.endswith("/views/list"):
+            assert "path" not in body
+            return response([{"name": view_name}, {"name": plain_view}])
         if url.endswith("/views"):
-            if "path" not in body:
-                return response([{"name": view_name}, {"name": plain_view}])
             path = body["path"]
             if not path:
                 return response(
@@ -179,7 +180,10 @@ def test_discovery_uses_position_and_filtered_listing_for_sql() -> None:
         ]
         literal_engine.dispose()
 
-    assert all(not url.endswith("/views/list") for url, _ in requests_made)
+    assert any(url.endswith("/views/list") for url, _ in requests_made)
+    assert all(
+        "path" in body for url, body in requests_made if url.endswith("/views")
+    )
     assert any(
         body.get("path") == ["demo.metrics", "main"]
         for url, body in requests_made

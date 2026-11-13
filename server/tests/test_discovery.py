@@ -28,13 +28,29 @@ def test_views_browse_mixed_depth_hierarchy() -> None:
         assert [view["name"] for view in leaf["views"]] == ["sales"]
 
 
-def test_omitted_path_keeps_legacy_array() -> None:
+def test_legacy_list_keeps_flat_array() -> None:
     with TestClient(create_app()) as client:
-        for endpoint in ("/views", "/views/list"):
-            response = client.post(endpoint, json={})
-            assert response.status_code == 200
-            assert {view["name"] for view in response.json()} == {"marketing", "sales"}
-        assert client.post("/views/list", json={"path": []}).json()["views"] == []
+        response = client.post("/views/list", json={})
+        assert response.status_code == 200
+        assert {view["name"] for view in response.json()} == {"marketing", "sales"}
+
+
+@pytest.mark.parametrize(
+    ("endpoint", "payload"),
+    [
+        ("/views", {}),
+        ("/views", {"path": None}),
+        ("/views", {"path": "foo"}),
+        ("/views/list", {"path": []}),
+        ("/views/list", {"path": ["foo"]}),
+        ("/views/list", {"path": None}),
+    ],
+)
+def test_endpoint_request_contract(endpoint: str, payload: dict) -> None:
+    with TestClient(create_app()) as client:
+        response = client.post(endpoint, json=payload)
+        assert response.status_code == 400
+        assert response.json()["detail"]
 
 
 def test_empty_choices_keep_the_next_level() -> None:

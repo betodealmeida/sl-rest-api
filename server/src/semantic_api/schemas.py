@@ -23,7 +23,10 @@ class _Model(BaseModel):
 
 class ListViewsRequest(_Model):
     runtime_configuration: dict[str, Any] = Field(default_factory=dict)
-    path: list[str | None] | None = None
+
+
+class BrowseViewsRequest(ListViewsRequest):
+    path: list[str | None]
 
 
 class ViewRequest(_Model):
