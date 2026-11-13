@@ -40,15 +40,14 @@ def test_discovery_uses_position_and_filtered_listing_for_sql() -> None:
     view_name = "demo.metrics.main.download_session"
     plain_view = "system.dj.superset_unversioned_demo"
     literal_view = "demo.metrics.literal.report"
+    root_view = "global.overview"
+    catalog_view = "demo.metrics.overview"
     requests_made = []
     queries = []
 
     def post(url, **kwargs):
         body = kwargs["json"]
         requests_made.append((url, body))
-        if url.endswith("/views/list"):
-            assert "path" not in body
-            return response([{"name": view_name}, {"name": plain_view}])
         if url.endswith("/views"):
             path = body["path"]
             if not path:
@@ -58,7 +57,7 @@ def test_discovery_uses_position_and_filtered_listing_for_sql() -> None:
                             "next": {"id": "group", "display_name": "Group"},
                             "values": ["demo.metrics", "shared", "system.dj"],
                         },
-                        "views": [],
+                        "views": [{"name": root_view}],
                     }
                 )
             if len(path) == 1:
@@ -73,7 +72,9 @@ def test_discovery_uses_position_and_filtered_listing_for_sql() -> None:
                             "next": {"id": "version", "display_name": "Version"},
                             "values": values,
                         },
-                        "views": [],
+                        "views": [{"name": catalog_view}]
+                        if path == ["demo.metrics"]
+                        else [],
                     }
                 )
             views = []
@@ -114,6 +115,16 @@ def test_discovery_uses_position_and_filtered_listing_for_sql() -> None:
             "system%2Edj",
         ]
         assert inspect(engine).get_schema_names() == []
+        assert inspect(engine).get_table_names() == sorted(
+            [root_view, catalog_view, view_name, literal_view, plain_view]
+        )
+        assert engine.dialect._adapter_cls.table_names == {
+            root_view,
+            catalog_view,
+            view_name,
+            literal_view,
+            plain_view,
+        }
         engine.dispose()
 
         catalog_engine = create_engine(
@@ -128,6 +139,9 @@ def test_discovery_uses_position_and_filtered_listing_for_sql() -> None:
             "feature%2Ffoo%2Ebar",
             "~unversioned",
         ]
+        assert inspect(catalog_engine).get_table_names() == sorted(
+            [catalog_view, view_name, literal_view]
+        )
         assert inspect(catalog_engine).get_table_names(schema="main") == [view_name]
         assert inspect(catalog_engine).has_table(view_name, schema="main")
         assert not inspect(catalog_engine).has_table(view_name, schema="~unversioned")
@@ -180,7 +194,7 @@ def test_discovery_uses_position_and_filtered_listing_for_sql() -> None:
         ]
         literal_engine.dispose()
 
-    assert any(url.endswith("/views/list") for url, _ in requests_made)
+    assert all(not url.endswith("/views/list") for url, _ in requests_made)
     assert all(
         "path" in body for url, body in requests_made if url.endswith("/views")
     )

@@ -313,8 +313,8 @@ class SemanticAPIDialect(APSWDialect):
         self,
         path: list[str | None],
     ) -> tuple[list[str], dict[str, tuple[str, str]]]:
-        entries = self._browse(path)["views"]
-        names = sorted(view["name"] for view in entries)
+        result = self._browse(path)
+        names = {view["name"] for view in result["views"]}
         locations: dict[str, tuple[str, str]] = {}
         if len(path) == 2:
             location = (
@@ -322,7 +322,12 @@ class SemanticAPIDialect(APSWDialect):
                 encode_schema_label(path[1]),
             )
             locations = {name: location for name in names}
-        return names, locations
+        if result["hierarchy"]["next"] is not None:
+            for value in result["hierarchy"]["values"]:
+                child_names, child_locations = self._list_views([*path, value])
+                names.update(child_names)
+                locations.update(child_locations)
+        return sorted(names), locations
 
     def _refresh_views(self) -> None:
         path: list[str | None] = []
@@ -330,24 +335,7 @@ class SemanticAPIDialect(APSWDialect):
             path.append(unquote(self._catalog))
             if self._schema:
                 path.append(decode_schema_label(self._schema))
-        if not path:
-            response = self._post(
-                "/views/list", {"runtime_configuration": self._configuration}
-            )
-            self._check_response(response)
-            self._views = sorted(view["name"] for view in response.json())
-            self._view_locations = {}
-        elif len(path) == 1:
-            namespace = cast(str, path[0])
-            branches = self._browse(path)["hierarchy"]["values"]
-            locations: dict[str, tuple[str, str]] = {}
-            for branch in branches:
-                _, branch_locations = self._list_views([namespace, branch])
-                locations.update(branch_locations)
-            self._views = sorted(locations)
-            self._view_locations = locations
-        else:
-            self._views, self._view_locations = self._list_views(path)
+        self._views, self._view_locations = self._list_views(path)
         if self._adapter_cls is not None:
             self._adapter_cls.table_names = set(self._views)
 
