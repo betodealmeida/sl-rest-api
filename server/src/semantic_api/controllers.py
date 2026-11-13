@@ -12,6 +12,7 @@ from semantic_api import registry
 from semantic_api.auth import require_bearer
 from semantic_api.discovery import browse
 from semantic_api.schemas import (
+    BrowseViewsRequest,
     CompatibilityRequest,
     ListViewsRequest,
     QueryPayload,
@@ -47,32 +48,26 @@ def _view_payload(view) -> dict[str, Any]:  # noqa: ANN001 - SemanticView
     }
 
 
-def _list_views(data: ListViewsRequest) -> list[dict[str, Any]] | dict[str, Any]:
-    views = registry.layer().get_semantic_views(data.runtime_configuration)
-    if data.path is None:
-        return [_view_summary_payload(view) for view in views]
-    hierarchy, direct_views = browse(views, data.path)
-    return {
-        "hierarchy": hierarchy,
-        "views": [_view_summary_payload(view) for view in direct_views],
-    }
-
-
-@post("/views", status_code=HTTP_200_OK, guards=[require_bearer], tags=["views"])
-async def list_views(data: ListViewsRequest) -> list[dict[str, Any]] | dict[str, Any]:
-    return _list_views(data)
-
-
 class ViewsController(Controller):
     path = "/views"
     tags = ["views"]
     guards = [require_bearer]
 
+    @post("/", status_code=HTTP_200_OK)
+    async def browse_views(self, data: BrowseViewsRequest) -> dict[str, Any]:
+        views = registry.layer().get_semantic_views(data.runtime_configuration)
+        hierarchy, direct_views = browse(views, data.path)
+        return {
+            "hierarchy": hierarchy,
+            "views": [_view_summary_payload(view) for view in direct_views],
+        }
+
     @post("/list", status_code=HTTP_200_OK)
     async def list_views_legacy(
         self, data: ListViewsRequest
-    ) -> list[dict[str, Any]] | dict[str, Any]:
-        return _list_views(data)
+    ) -> list[dict[str, Any]]:
+        views = registry.layer().get_semantic_views(data.runtime_configuration)
+        return [_view_summary_payload(view) for view in views]
 
     @post("/{view_name:str}", status_code=HTTP_200_OK)
     async def get_view(self, view_name: str, data: ViewRequest) -> dict[str, Any]:

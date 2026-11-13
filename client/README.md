@@ -81,6 +81,11 @@ The client sends selected values unchanged in the JSON `path` when listing
 views. It requires exactly two hierarchy levels and uses their positions,
 regardless of their names. Browsing schemas requires selecting a catalog.
 
+Discovery always uses `POST /views` with an explicit `path`. Unscoped connections
+start at `[]` and walk the catalog and schema choices, collecting views at every
+level. Connections scoped to a catalog or schema start at that selected path.
+The dialect does not use the legacy `/views/list` endpoint.
+
 When the second discovery value is JSON `null`, Superset displays the schema
 `unversioned` and sends `null` back in filtered view requests. A real string
 value `"unversioned"` displays as `~unversioned`; real values beginning with
