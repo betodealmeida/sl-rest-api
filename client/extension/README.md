@@ -10,6 +10,11 @@ Superset's backend-only extension secret storage. Tokens are scoped by the
 extension, Superset user, API URL, and OAuth2 client ID; they are not
 tied to a semantic-layer UUID and are never exposed to browser code.
 
+The extension targets the Superset provider SDK with host-supplied
+`transport`, `readiness`, `context`, and `cache_token` arguments. Hierarchy
+discovery runs only with resolved credentials. Semantic API requests use the
+host transport, the configured timeout, and a 64 MiB response limit.
+
 ## Configuration
 
 - `api_url`: Semantic Layer REST API base URL.
